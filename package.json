@@ -7,6 +7,6 @@
     "start": "streamlit run app.py"
   },
   "engines": {
-    "python": "3.11.x" // Aggiungi o modifica questa riga
+    "python": "3.11.x"
   }
 }
