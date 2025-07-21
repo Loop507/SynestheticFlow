@@ -59,23 +59,38 @@ def draw_minimal_mandala(frame_img: np.ndarray, width: int, height: int,
                         rms: float, complexity: int, thickness: int, 
                         beat: bool, freq_data: Tuple[float, float, float]) -> np.ndarray:
     """Mandala ultra-semplificato."""
-    cx, cy = width // 2, height // 2
-    base_r = min(width, height) // 4
-    circles = min(3 + int(rms * complexity), 8)  # Max 8 cerchi
-    
-    beat_scale = 1.3 if beat else 1.0
-    bass, mid, treble = freq_data
-    
-    colors = [
-        (int(255 * treble), int(128 * mid), int(255 * bass)),
-        (int(128 * bass), int(255 * treble), int(128 * mid)),
-        (int(255 * mid), int(255 * bass), int(128 * treble))
-    ]
-    
-    for i in range(circles):
-        r = int(base_r * (0.3 + 0.7 * i / circles) * beat_scale * (1 + rms))
-        color = colors[i % 3]
-        cv2.circle(frame_img, (cx, cy), r, color, thickness)
+    try:
+        cx, cy = width // 2, height // 2
+        base_r = min(width, height) // 4
+        circles = min(3 + int(float(rms) * complexity), 8)  # Max 8 cerchi
+        
+        beat_scale = 1.3 if beat else 1.0
+        bass, mid, treble = map(float, freq_data)  # Converti esplicitamente a float
+        
+        colors = [
+            (int(np.clip(255 * treble, 0, 255)), 
+             int(np.clip(128 * mid, 0, 255)), 
+             int(np.clip(255 * bass, 0, 255))),
+            (int(np.clip(128 * bass, 0, 255)), 
+             int(np.clip(255 * treble, 0, 255)), 
+             int(np.clip(128 * mid, 0, 255))),
+            (int(np.clip(255 * mid, 0, 255)), 
+             int(np.clip(255 * bass, 0, 255)), 
+             int(np.clip(128 * treble, 0, 255)))
+        ]
+        
+        for i in range(circles):
+            if circles > 0:  # Evita divisione per zero
+                r = int(base_r * (0.3 + 0.7 * i / circles) * beat_scale * (1 + float(rms)))
+                r = max(1, r)  # Assicurati che il raggio sia almeno 1
+                color = colors[i % 3]
+                cv2.circle(frame_img, (cx, cy), r, color, thickness)
+        
+    except Exception as e:
+        # Fallback: cerchio semplice
+        cx, cy = width // 2, height // 2
+        r = min(width, height) // 6
+        cv2.circle(frame_img, (cx, cy), r, (128, 128, 128), thickness)
     
     return frame_img
 
@@ -83,33 +98,45 @@ def draw_minimal_waves(frame_img: np.ndarray, width: int, height: int,
                       rms: float, complexity: int, frame_idx: int,
                       beat: bool, freq_data: Tuple[float, float, float]) -> np.ndarray:
     """Pattern ondulato ultra-semplificato."""
-    # Riduci risoluzione drasticamente per calcoli
-    calc_w, calc_h = width // 4, height // 4
-    
-    # Griglia semplificata
-    x = np.linspace(-1, 1, calc_w, dtype=np.float32)  # float32 più compatibile
-    y = np.linspace(-1, 1, calc_h, dtype=np.float32)
-    X, Y = np.meshgrid(x, y, sparse=True)  # sparse per memoria
-    
-    t = frame_idx * 0.1
-    beat_mult = 1.5 if beat else 1.0
-    bass, mid, treble = freq_data
-    
-    # Una sola onda semplice
-    wave = np.sin(X * 5 * beat_mult + t + bass * 3) * np.cos(Y * 3 + mid * 2)
-    wave = (wave + 1) * 127.5  # Normalizza a 0-255
-    wave = wave.astype(np.uint8)
-    
-    # Converti a RGB semplice
-    hue = (wave.astype(np.float32) + treble * 50) % 180
-    rgb_small = np.zeros((calc_h, calc_w, 3), dtype=np.uint8)
-    rgb_small[:,:,0] = np.clip(hue + bass * 100, 0, 255).astype(np.uint8)
-    rgb_small[:,:,1] = np.clip(wave + mid * 100, 0, 255) 
-    rgb_small[:,:,2] = np.clip(255 - hue + treble * 100, 0, 255).astype(np.uint8)
-    
-    # Ridimensiona velocemente
-    rgb_full = cv2.resize(rgb_small, (width, height), interpolation=cv2.INTER_NEAREST)
-    frame_img[:] = rgb_full
+    try:
+        # Riduci risoluzione drasticamente per calcoli
+        calc_w, calc_h = width // 4, height // 4
+        
+        # Griglia semplificata
+        x = np.linspace(-1, 1, calc_w, dtype=np.float32)
+        y = np.linspace(-1, 1, calc_h, dtype=np.float32)
+        X, Y = np.meshgrid(x, y)  # Rimuovi sparse=True che può causare problemi
+        
+        t = float(frame_idx * 0.1)  # Assicurati che sia float
+        beat_mult = 1.5 if beat else 1.0
+        bass, mid, treble = map(float, freq_data)  # Converti a float esplicito
+        
+        # Una sola onda semplice - assicurati che tutti i valori siano float
+        wave = np.sin(X * 5.0 * beat_mult + t + bass * 3.0) * np.cos(Y * 3.0 + mid * 2.0)
+        wave = np.clip((wave + 1.0) * 127.5, 0, 255)  # Normalizza a 0-255
+        wave = wave.astype(np.uint8)
+        
+        # Converti a RGB semplice
+        hue = np.clip((wave.astype(np.float32) + treble * 50.0) % 180.0, 0, 255)
+        
+        rgb_small = np.zeros((calc_h, calc_w, 3), dtype=np.uint8)
+        rgb_small[:,:,0] = np.clip(hue + bass * 100.0, 0, 255).astype(np.uint8)
+        rgb_small[:,:,1] = np.clip(wave.astype(np.float32) + mid * 100.0, 0, 255).astype(np.uint8)
+        rgb_small[:,:,2] = np.clip(255.0 - hue + treble * 100.0, 0, 255).astype(np.uint8)
+        
+        # Ridimensiona velocemente
+        rgb_full = cv2.resize(rgb_small, (width, height), interpolation=cv2.INTER_NEAREST)
+        frame_img[:] = rgb_full
+        
+    except Exception as e:
+        # Fallback: riempi con colore solido
+        bass, mid, treble = map(float, freq_data)
+        color = [
+            int(np.clip(bass * 255, 0, 255)),
+            int(np.clip(mid * 255, 0, 255)), 
+            int(np.clip(treble * 255, 0, 255))
+        ]
+        frame_img[:] = color
     
     return frame_img
 
@@ -137,34 +164,44 @@ def analyze_audio_minimal(audio_path: str, max_duration: int = 30) -> Tuple[np.n
 
 def process_frame_data(audio_chunk: np.ndarray, sr: int = 11025) -> Tuple[float, Tuple[float, float, float]]:
     """Analisi frame ultra-veloce."""
-    if len(audio_chunk) == 0:
+    try:
+        if len(audio_chunk) == 0:
+            return 0.0, (0.0, 0.0, 0.0)
+        
+        # RMS veloce - converti esplicitamente a float
+        rms = float(np.sqrt(np.mean(audio_chunk.astype(np.float32)**2)))
+        rms_norm = min(1.0, rms * 10.0)  # Amplifica per visibilità
+        
+        # Frequenze super-semplificate (solo su 64 campioni max)
+        if len(audio_chunk) > 32:
+            chunk = audio_chunk[:64] if len(audio_chunk) > 64 else audio_chunk
+            chunk = chunk.astype(np.float32)  # Assicurati che sia float32
+            
+            fft = np.fft.fft(chunk)
+            mag = np.abs(fft[:len(chunk)//2]).astype(np.float32)
+            
+            # Dividi in 3 bande fisse
+            third = len(mag) // 3
+            if third > 0:
+                bass = float(np.mean(mag[:third]))
+                mid = float(np.mean(mag[third:2*third]))
+                treble = float(np.mean(mag[2*third:]))
+                
+                # Normalizza veloce
+                max_mag = max(bass, mid, treble, 1e-6)
+                bass = min(1.0, bass / max_mag)
+                mid = min(1.0, mid / max_mag) 
+                treble = min(1.0, treble / max_mag)
+            else:
+                bass = mid = treble = 0.0
+        else:
+            bass = mid = treble = 0.0
+        
+        return rms_norm, (bass, mid, treble)
+        
+    except Exception as e:
+        # Fallback sicuro
         return 0.0, (0.0, 0.0, 0.0)
-    
-    # RMS veloce
-    rms = np.sqrt(np.mean(audio_chunk**2))
-    rms_norm = min(1.0, rms * 10)  # Amplifica per visibilità
-    
-    # Frequenze super-semplificate (solo su 64 campioni max)
-    if len(audio_chunk) > 32:
-        chunk = audio_chunk[:64] if len(audio_chunk) > 64 else audio_chunk
-        fft = np.fft.fft(chunk)
-        mag = np.abs(fft[:len(chunk)//2])
-        
-        # Dividi in 3 bande fisse
-        third = len(mag) // 3
-        bass = np.mean(mag[:third]) if third > 0 else 0
-        mid = np.mean(mag[third:2*third]) if third > 0 else 0
-        treble = np.mean(mag[2*third:]) if third > 0 else 0
-        
-        # Normalizza veloce
-        max_mag = max(bass, mid, treble, 1e-6)
-        bass = min(1.0, bass / max_mag)
-        mid = min(1.0, mid / max_mag) 
-        treble = min(1.0, treble / max_mag)
-    else:
-        bass = mid = treble = 0.0
-    
-    return rms_norm, (bass, mid, treble)
 
 def check_ffmpeg() -> bool:
     """Verifica FFmpeg."""
@@ -316,38 +353,46 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
         
         # Generazione frame ottimizzata
         for i in range(total_frames):
-            # Estrai chunk audio
-            start_idx = i * samples_per_frame
-            end_idx = min(start_idx + samples_per_frame, len(audio_data))
-            chunk = audio_data[start_idx:end_idx]
-            
-            # Analizza chunk
-            rms, freq_data = process_frame_data(chunk)
-            
-            # Rileva beat
-            frame_time = i / fps
-            beat_detected = len(beat_times) > 0 and np.any(np.abs(beat_times - frame_time) < (0.5 / fps))
-            
-            # Crea frame
-            frame = np.zeros((height, width, 3), dtype=np.uint8)
-            
-            if pattern == "Mandala":
-                frame = draw_minimal_mandala(frame, width, height, rms, complexity, 
-                                           thickness, beat_detected, freq_data)
-            else:
-                frame = draw_minimal_waves(frame, width, height, rms, complexity, 
-                                         i, beat_detected, freq_data)
-            
-            out.write(frame)
-            
-            # Progresso e cleanup
-            if i % 5 == 0:  # Più frequente per feedback
-                progress_val = 0.2 + 0.6 * (i + 1) / total_frames
-                progress_bar.progress(progress_val)
-                status_text.text(f"🎨 Frame {i+1}/{total_frames} ({((i+1)/total_frames*100):.1f}%)")
+            try:
+                # Estrai chunk audio
+                start_idx = i * samples_per_frame
+                end_idx = min(start_idx + samples_per_frame, len(audio_data))
+                chunk = audio_data[start_idx:end_idx]
                 
-            if i % 20 == 0:  # Cleanup ogni 20 frame
-                gc.collect()
+                # Analizza chunk
+                rms, freq_data = process_frame_data(chunk)
+                
+                # Rileva beat
+                frame_time = float(i) / float(fps)
+                beat_detected = (len(beat_times) > 0 and 
+                               np.any(np.abs(beat_times - frame_time) < (0.5 / fps)))
+                
+                # Crea frame
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                
+                if pattern == "Mandala":
+                    frame = draw_minimal_mandala(frame, width, height, rms, complexity, 
+                                               thickness, beat_detected, freq_data)
+                else:
+                    frame = draw_minimal_waves(frame, width, height, rms, complexity, 
+                                             i, beat_detected, freq_data)
+                
+                out.write(frame)
+                
+                # Progresso e cleanup
+                if i % 5 == 0:  # Più frequente per feedback
+                    progress_val = 0.2 + 0.6 * (i + 1) / total_frames
+                    progress_bar.progress(progress_val)
+                    status_text.text(f"🎨 Frame {i+1}/{total_frames} ({((i+1)/total_frames*100):.1f}%)")
+                    
+                if i % 20 == 0:  # Cleanup ogni 20 frame
+                    gc.collect()
+                    
+            except Exception as e:
+                # Se fallisce un frame, crea frame nero e continua
+                st.warning(f"Errore frame {i}: {e}")
+                frame = np.zeros((height, width, 3), dtype=np.uint8)
+                out.write(frame)
         
         out.release()
         progress_bar.progress(0.8)
