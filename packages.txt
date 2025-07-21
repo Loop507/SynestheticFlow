@@ -1,10 +1,1 @@
-# Questo è un file packages.txt puro.
-# Rimuovi i commenti (#) solo dai pacchetti strettamente necessari.
-# Abbiamo rimosso ffmpeg e le sue dipendenze perché causavano il blocco del deploy.
-# Se hai bisogno di ffmpeg, potresti doverlo aggiungere di nuovo,
-# ma prima prova senza per vedere se l'app si avvia.
-
-# Esempio (non abilitato di default, solo se strettamente necessario per la tua app):
-# ffmpeg
-# libsm6
-# libxext6
+ffmpeg
