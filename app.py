@@ -25,17 +25,21 @@ st.write("Crea visualizzazioni dinamiche e pattern reattivi alla tua musica!")
 # --- FUNZIONI DI DISEGNO DEI PATTERN ---
 
 def draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames):
-    """Disegna un pattern di cerchi concentrici che reagisce al volume."""
+    """Disegna un pattern di cerchi concentrici che reagisce al volume, con dinamiche potenziate."""
     center_x, center_y = frame_width // 2, frame_height // 2
 
-    # Scala base del raggio in base alla dimensione del frame
-    base_radius = min(frame_width, frame_height) // 4
-    num_circles = int(3 + normalized_rms * visual_complexity * 2)
+    # Scala base del raggio in base alla dimensione del frame, reso più grande
+    base_radius = min(frame_width, frame_height) // 3 # Aumentato per cerchi più grandi
+    # Più volume = più cerchi, più grandi
+    num_circles = int(5 + normalized_rms * visual_complexity * 3) # Più cerchi base, più reattivi al volume
 
     for j in range(num_circles):
-        radius = int(base_radius * (1 + normalized_rms * 0.7) * (j / num_circles + 0.1))
-        color_val = int(255 * (normalized_rms + j / num_circles) / 2)
-        circle_color = (min(255, color_val), min(255, 50 + color_val // 3), min(255, 200 + color_val // 2))
+        # Il raggio del cerchio varia con il volume e l'indice del cerchio, reso più reattivo
+        radius = int(base_radius * (0.8 + normalized_rms * 0.9) * (j / num_circles + 0.1)) # Maggiore impatto del volume
+        
+        # Il colore cambia con il volume e l'indice del cerchio, reso più aggressivo
+        color_val = int(255 * (normalized_rms + j / num_circles) / 1.5)
+        circle_color = (min(255, color_val), min(255, 100 + color_val // 2), min(255, 200 + color_val)) # Colori più vivaci e reattivi
         cv2.circle(frame_img, (center_x, center_y), radius, circle_color, line_thickness)
     return frame_img
 
@@ -49,7 +53,7 @@ def draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, vi
 
     # --- Parametri dinamici basati su complessità e volume ---
     num_petals_base = int(4 + visual_complexity * 2)
-    num_petals_volume = int(num_petals_base + normalized_rms * 12) # Aumenta il numero di "petali" con il volume, più aggressivo
+    num_petals_volume = int(num_petals_base + normalized_rms * 12)
     num_petals_volume = max(num_petals_base, num_petals_volume if num_petals_volume % 2 == 0 else num_petals_volume + 1)
 
     max_length_base = min(frame_width, frame_height) // 2 * (0.5 + visual_complexity / 20)
@@ -60,36 +64,31 @@ def draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, vi
     current_rotation_offset = (i / total_frames) * (2 * math.pi) * rotation_speed + (normalized_rms * math.pi / 4)
 
     # --- Parametri per l'ondulazione ---
-    wave_frequency = 4 + visual_complexity # Più onde con complessità
-    wave_amplitude = int(10 + normalized_rms * 30 * (visual_complexity / 10)) # Ampiezza dell'onda che pulsa con il volume e complessità
+    wave_frequency = 4 + visual_complexity
+    wave_amplitude = int(10 + normalized_rms * 30 * (visual_complexity / 10))
     
     # --- Disegno dello strato principale dei petali/raggi con ondulazione ---
     for j in range(num_petals_volume):
         angle = (2 * math.pi / num_petals_volume) * j + current_rotation_offset
         
-        # Disegna una linea curva (simulata con molti piccoli segmenti)
         prev_point = (center_x, center_y)
-        num_segments = 20 # Numero di segmenti per disegnare ogni petalo come una curva
+        num_segments = 20
         
         for k in range(num_segments + 1):
             segment_t = k / num_segments
             
-            # Calcola la lunghezza radiale per il segmento
             length_radial = max_length * segment_t
             
-            # Aggiungi un'ondulazione al raggio
             wave_offset = wave_amplitude * math.sin(angle * wave_frequency + i * 0.1 + segment_t * math.pi * 2)
             
-            # Calcola il punto lungo l'angolo, con l'offset dell'onda perpendicolare
-            current_angle_with_offset = angle + wave_offset / length_radial # Converte l'offset in angolo se necessario
+            # --- CORREZIONE QUI: Evita la divisione per zero se length_radial è 0 ---
+            current_angle_with_offset = angle + (wave_offset / length_radial if length_radial > 0 else 0)
 
-            # Calcola le coordinate del punto con ondulazione
             current_x = int(center_x + length_radial * math.cos(current_angle_with_offset))
             current_y = int(center_y + length_radial * math.sin(current_angle_with_offset))
             
             current_point = (current_x, current_y)
             
-            # Colore primario vibrante (influenzato dal volume e dall'angolo)
             hue = int((normalized_rms * 180 + (angle / (2 * math.pi)) * 360) % 180)
             saturation = int(200 + normalized_rms * 55)
             value = int(150 + normalized_rms * 100)
@@ -117,7 +116,8 @@ def draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, vi
             
             wave_offset_secondary = wave_amplitude * 0.7 * math.cos(angle * wave_frequency * 1.5 + i * 0.05 + segment_t * math.pi * 3)
             
-            current_angle_with_offset_secondary = angle + wave_offset_secondary / length_radial_secondary if length_radial_secondary > 0 else angle
+            # Questo era già protetto, ma lo lascio per coerenza
+            current_angle_with_offset_secondary = angle + (wave_offset_secondary / length_radial_secondary if length_radial_secondary > 0 else 0)
             
             current_x_secondary = int(center_x + length_radial_secondary * math.cos(current_angle_with_offset_secondary))
             current_y_secondary = int(center_y + length_radial_secondary * math.sin(current_angle_with_offset_secondary))
@@ -182,8 +182,7 @@ if generate_button and uploaded_audio is not None:
 
         all_visual_frames = []
         
-        # --- Modifica la risoluzione dei frame qui ---
-        frame_width, frame_height = 1280, 720 # Nuova risoluzione: 1280x720 (HD)
+        frame_width, frame_height = 1280, 720
         
         progress_text = st.empty()
         progress_bar = st.progress(0)
@@ -202,7 +201,7 @@ if generate_button and uploaded_audio is not None:
             audio_chunk = y[start_sample:end_sample]
 
             rms_energy = np.sqrt(np.mean(audio_chunk**2))
-            normalized_rms = np.log10(rms_energy + 1e-7) / np.log10(1.0 + 1e-7) # Aggiustato a 1e-7
+            normalized_rms = np.log10(rms_energy + 1e-7) / np.log10(1.0 + 1e-7)
             normalized_rms = np.clip(normalized_rms, 0, 1)
 
             frame_img = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
