@@ -6,3 +6,5 @@ pydub
 librosa
 imageio[ffmpeg]
 scipy
+streamlit
+soundfile
