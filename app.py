@@ -4,6 +4,7 @@ import cv2
 import librosa
 import tempfile
 import time
+import os
 
 # --- FUNZIONI DI SUPPORTO ---
 def prepare_audio_file(uploaded_file, temp_dir):
@@ -16,7 +17,7 @@ def analyze_audio_minimal(audio_path):
     y, sr = librosa.load(audio_path, sr=11025)
     tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-    return y, beat_times, tempo
+    return y, beat_times, tempo, sr
 
 def get_optimal_settings(duration):
     width, height = 640, 360
@@ -25,7 +26,7 @@ def get_optimal_settings(duration):
     return width, height, fps, int(estimated_size)
 
 def process_frame_data(audio_chunk):
-    rms = np.sqrt(np.mean(audio_chunk ** 2))
+    rms = np.sqrt(np.mean(audio_chunk ** 2)) if len(audio_chunk) > 0 else 0
     freq_data = np.abs(np.fft.rfft(audio_chunk)) if len(audio_chunk) > 0 else np.array([])
     return rms, freq_data
 
@@ -54,21 +55,24 @@ if uploaded_audio:
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
             audio_path = prepare_audio_file(uploaded_audio, temp_dir)
-            y, beat_times, tempo = analyze_audio_minimal(audio_path)
+            y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
             duration = librosa.get_duration(filename=audio_path)
             width, height, fps, est_size = get_optimal_settings(duration)
             
             st.info(f"🎼 BPM: {float(tempo):.0f} | ⏱️ {float(duration):.1f}s | 🎮 {fps} FPS | 📆 ~{est_size} MB")
 
             if st.button("🎬 CREA VIDEO"):
+                video_filename = os.path.join(temp_dir, "output_video.mp4")
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                video_writer = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
                 video_placeholder = st.empty()
                 frame_count = int(duration * fps)
                 frame_duration = 1.0 / fps
                 
                 for frame_idx in range(frame_count):
                     start_time = frame_idx * frame_duration
-                    start_sample = int(start_time * 11025)
-                    end_sample = start_sample + int(frame_duration * 11025)
+                    start_sample = int(start_time * sr)
+                    end_sample = start_sample + int(frame_duration * sr)
                     audio_chunk = y[start_sample:end_sample] if end_sample <= len(y) else y[start_sample:]
                     rms, freq_data = process_frame_data(audio_chunk)
                     beat = np.any((beat_times >= start_time) & (beat_times < start_time + frame_duration))
@@ -79,8 +83,16 @@ if uploaded_audio:
                     else:
                         frame_img = draw_minimal_waves(frame_img, width, height, rms, 5, frame_idx, beat, freq_data)
                     
+                    video_writer.write(frame_img)
                     frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
                     video_placeholder.image(frame_rgb, channels="RGB")
                     time.sleep(frame_duration)
+                
+                video_writer.release()
+                st.success("Video generato con successo!")
+                with open(video_filename, "rb") as f:
+                    video_bytes = f.read()
+                st.download_button("⬇️ Scarica Video", video_bytes, file_name="video_audio_sincronizzato.mp4", mime="video/mp4")
+
         except Exception as e:
             st.error(f"Errore generazione video: {e}")
