@@ -1,6 +1,6 @@
 streamlit
 numpy
-opencv-python
+opencv-python-headless
 Pillow
 pydub
 librosa
