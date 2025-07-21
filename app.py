@@ -28,124 +28,81 @@ def draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, vi
     """Disegna un pattern di cerchi concentrici che reagisce al volume, con dinamiche potenziate."""
     center_x, center_y = frame_width // 2, frame_height // 2
 
-    # Scala base del raggio in base alla dimensione del frame, reso più grande
-    base_radius = min(frame_width, frame_height) // 3 # Aumentato per cerchi più grandi
-    # Più volume = più cerchi, più grandi
-    num_circles = int(5 + normalized_rms * visual_complexity * 3) # Più cerchi base, più reattivi al volume
+    base_radius = min(frame_width, frame_height) // 3
+    num_circles = int(5 + normalized_rms * visual_complexity * 3)
 
     for j in range(num_circles):
-        # Il raggio del cerchio varia con il volume e l'indice del cerchio, reso più reattivo
-        radius = int(base_radius * (0.8 + normalized_rms * 0.9) * (j / num_circles + 0.1)) # Maggiore impatto del volume
+        radius = int(base_radius * (0.8 + normalized_rms * 0.9) * (j / num_circles + 0.1))
         
-        # Il colore cambia con il volume e l'indice del cerchio, reso più aggressivo
         color_val = int(255 * (normalized_rms + j / num_circles) / 1.5)
-        circle_color = (min(255, color_val), min(255, 100 + color_val // 2), min(255, 200 + color_val)) # Colori più vivaci e reattivi
+        circle_color = (min(255, color_val), min(255, 100 + color_val // 2), min(255, 200 + color_val))
         cv2.circle(frame_img, (center_x, center_y), radius, circle_color, line_thickness)
     return frame_img
 
-def draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames):
-    """Disegna un pattern radiale tipo fiore/stella che reagisce al volume, con dinamiche e dettagli potenziati, e ondulazioni."""
-    center_x, center_y = frame_width // 2, frame_height // 2
+def draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, i, total_frames):
+    """
+    Genera un pattern fluido e organico basato su gradienti di colore generati matematicamente,
+    simulando le immagini di riferimento. Opera a livello di pixel.
+    """
+    # Genera una griglia di coordinate per tutti i pixel del frame
+    y_coords, x_coords = np.indices((frame_height, frame_width))
+
+    # Normalizza le coordinate a un intervallo da -1 a 1 per facilitare i calcoli matematici
+    x_norm = (x_coords / frame_width) * 2 - 1
+    y_norm = (y_coords / frame_height) * 2 - 1
+
+    # Componente temporale per l'animazione, influenzata dal volume per maggiore dinamicità
+    t = i * 0.01 + normalized_rms * 0.5 
+
+    # --- Generazione del campo d'onda complesso ---
+    # Combinazione di più funzioni d'onda (seno/coseno) per creare complessità e fluidità
+    # Variazioni spaziali e temporali
+
+    # Onda di base che si muove in diagonale
+    wave_field1 = np.sin(x_norm * 10 + y_norm * 8 + t * 5 + normalized_rms * 3) * 0.5
     
-    # --- Sfondo pulsante e più dinamico ---
-    bg_color_val = int(normalized_rms * 100)
-    frame_img[:] = (bg_color_val, bg_color_val, bg_color_val)
-
-    # --- Parametri dinamici basati su complessità e volume ---
-    num_petals_base = int(4 + visual_complexity * 2)
-    num_petals_volume = int(num_petals_base + normalized_rms * 12)
-    num_petals_volume = max(num_petals_base, num_petals_volume if num_petals_volume % 2 == 0 else num_petals_volume + 1)
-
-    max_length_base = min(frame_width, frame_height) // 2 * (0.5 + visual_complexity / 20)
-    max_length = int(max_length_base * (0.7 + normalized_rms * 0.3))
-
-    # --- Rotazione e pulsazione più complesse ---
-    rotation_speed = 0.05 + normalized_rms * 0.2 + (visual_complexity * 0.01)
-    current_rotation_offset = (i / total_frames) * (2 * math.pi) * rotation_speed + (normalized_rms * math.pi / 4)
-
-    # --- Parametri per l'ondulazione ---
-    wave_frequency = 4 + visual_complexity
-    wave_amplitude = int(10 + normalized_rms * 30 * (visual_complexity / 10))
+    # Onda radiale che pulsa dal centro
+    r = np.sqrt(x_norm**2 + y_norm**2)
+    angle = np.arctan2(y_norm, x_norm)
+    wave_field2 = np.cos(r * (12 + visual_complexity) + t * (4 + normalized_rms * 2)) * 0.6
     
-    # --- Disegno dello strato principale dei petali/raggi con ondulazione ---
-    for j in range(num_petals_volume):
-        angle = (2 * math.pi / num_petals_volume) * j + current_rotation_offset
-        
-        prev_point = (center_x, center_y)
-        num_segments = 20
-        
-        for k in range(num_segments + 1):
-            segment_t = k / num_segments
-            
-            length_radial = max_length * segment_t
-            
-            wave_offset = wave_amplitude * math.sin(angle * wave_frequency + i * 0.1 + segment_t * math.pi * 2)
-            
-            # --- CORREZIONE QUI: Evita la divisione per zero se length_radial è 0 ---
-            current_angle_with_offset = angle + (wave_offset / length_radial if length_radial > 0 else 0)
+    # Onda che crea un effetto vortice/spirale
+    swirl_strength = 0.5 + normalized_rms * 0.3
+    swirl_x = x_norm * np.cos(angle + t * 0.5) - y_norm * np.sin(angle + t * 0.5)
+    swirl_y = x_norm * np.sin(angle + t * 0.5) + y_norm * np.cos(angle + t * 0.5)
+    wave_field3 = np.sin(swirl_x * (8 + visual_complexity) + swirl_y * (7 + visual_complexity) + t * 6) * 0.7
 
-            current_x = int(center_x + length_radial * math.cos(current_angle_with_offset))
-            current_y = int(center_y + length_radial * math.sin(current_angle_with_offset))
-            
-            current_point = (current_x, current_y)
-            
-            hue = int((normalized_rms * 180 + (angle / (2 * math.pi)) * 360) % 180)
-            saturation = int(200 + normalized_rms * 55)
-            value = int(150 + normalized_rms * 100)
-            
-            hsv_color = np.array([[[hue, saturation, value]]], dtype=np.uint8)
-            bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0].tolist()
-            
-            if k > 0:
-                cv2.line(frame_img, prev_point, current_point, bgr_color, line_thickness)
-            prev_point = current_point
+    # Onda aggiuntiva per maggiore complessità e intersezioni
+    wave_field4 = np.cos(x_norm * (visual_complexity * 2) + t * 2 + np.sin(y_norm * 5)) * 0.4
 
-    # --- Disegno di uno strato secondario per maggiore complessità ---
-    num_petals_secondary = int(num_petals_volume * 1.5)
-    secondary_rotation_offset = current_rotation_offset * 0.5 + math.pi / 4
+    # Combina tutti i campi d'onda
+    # L'intensità complessiva delle onde è influenzata dal volume
+    total_wave_value = (wave_field1 + wave_field2 + wave_field3 + wave_field4) * (0.8 + normalized_rms * 0.7)
+
+    # Normalizza il valore complessivo a un intervallo utile per la mappatura del colore (es. 0-1)
+    normalized_value = np.clip(total_wave_value, -3, 3) # Limita i valori estremi
+    normalized_value = (normalized_value + 3) / 6 # Rescala a 0-1
+
+    # --- Mappatura del colore (usando HSV per gradienti vividi e controllati) ---
+    # Tonalità (Hue): Varia in base al valore dell'onda, al tempo e al volume
+    hue = (normalized_value * 200 + t * 30 + normalized_rms * 60) % 180 # Intervallo HSV hue è 0-179
+
+    # Saturazione: Alta per colori vivaci, con leggera influenza del volume
+    saturation = 200 + (normalized_rms * 55) # Sempre molto saturo
+    saturation = np.clip(saturation, 0, 255)
+
+    # Valore (Brightness): Pulsazione più intensa con il volume, con variazione basata sull'onda
+    value = (normalized_value * 180 + normalized_rms * 70).astype(np.uint8) # Luminosità di base + influenza RMS
+    value = np.clip(value, 0, 255) # Assicura che i valori rientrino nel range valido
+
+    # Crea un'immagine HSV stackando i canali
+    hsv_image = np.stack([hue.astype(np.uint8), saturation * np.ones_like(hue, dtype=np.uint8), value], axis=-1)
     
-    for j in range(num_petals_secondary):
-        angle = (2 * math.pi / num_petals_secondary) * j + secondary_rotation_offset
-        
-        prev_point = (center_x, center_y)
-        num_segments_secondary = 15
-        
-        for k in range(num_segments_secondary + 1):
-            segment_t = k / num_segments_secondary
-            length_radial_secondary = max_length * 0.6 * segment_t
-            
-            wave_offset_secondary = wave_amplitude * 0.7 * math.cos(angle * wave_frequency * 1.5 + i * 0.05 + segment_t * math.pi * 3)
-            
-            # Questo era già protetto, ma lo lascio per coerenza
-            current_angle_with_offset_secondary = angle + (wave_offset_secondary / length_radial_secondary if length_radial_secondary > 0 else 0)
-            
-            current_x_secondary = int(center_x + length_radial_secondary * math.cos(current_angle_with_offset_secondary))
-            current_y_secondary = int(center_y + length_radial_secondary * math.sin(current_angle_with_offset_secondary))
-            
-            current_point_secondary = (current_x_secondary, current_y_secondary)
-            
-            hue_secondary = int((hue + 90) % 180)
-            saturation_secondary = int(255 - normalized_rms * 50)
-            value_secondary = int(100 + normalized_rms * 155)
-            
-            hsv_color_secondary = np.array([[[hue_secondary, saturation_secondary, value_secondary]]], dtype=np.uint8)
-            bgr_color_secondary = cv2.cvtColor(hsv_color_secondary, cv2.COLOR_HSV2BGR)[0][0].tolist()
-            
-            if k > 0:
-                cv2.line(frame_img, prev_point, current_point_secondary, bgr_color_secondary, max(1, line_thickness - 1))
-            prev_point = current_point_secondary
+    # Converte l'immagine da HSV a BGR (formato usato da OpenCV)
+    bgr_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
 
-
-    # --- Cerchio centrale pulsante più grande e con bordi ---
-    circle_radius_main = int(30 + normalized_rms * 100)
-    circle_radius_border = int(circle_radius_main * 1.1)
-    
-    cv2.circle(frame_img, (center_x, center_y), circle_radius_border, (50, 50, 50), -1)
-    cv2.circle(frame_img, (center_x, center_y), circle_radius_main, (255, 255, 255), -1)
-
-    # --- Anello esterno sottile che pulsa ---
-    outer_ring_radius = int(min(frame_width, frame_height) // 2 * (0.8 + normalized_rms * 0.1))
-    cv2.circle(frame_img, (center_x, center_y), outer_ring_radius, (255, 255, 0), max(1, line_thickness + 1))
+    # Applica l'immagine generata al frame attuale
+    frame_img[:] = bgr_image
 
     return frame_img
 
@@ -156,8 +113,9 @@ uploaded_audio = st.file_uploader("Carica un file audio (MP3, WAV)", type=["mp3"
 st.sidebar.subheader("Impostazioni Generazione Visual")
 num_frames_per_second = st.sidebar.slider("Frame al secondo (FPS)", 15, 60, 24)
 visual_complexity = st.sidebar.slider("Complessità visiva", 1, 10, 5)
-line_thickness = st.sidebar.slider("Spessore linee", 1, 5, 2)
-pattern_type = st.sidebar.selectbox("Tipo di Pattern", ["Mandala Semplice (Cerchi)", "Mandala Radiale (Fiori)"])
+# line_thickness è meno rilevante per i pattern basati su pixel, ma lo lascio per Mandala Semplice
+line_thickness = st.sidebar.slider("Spessore linee (per Mandala Semplice)", 1, 5, 2)
+pattern_type = st.sidebar.selectbox("Tipo di Pattern", ["Mandala Semplice (Cerchi)", "Flusso Ondulato a Gradiente"])
 
 
 generate_button = st.button("✨ Genera Visual e Video")
@@ -201,15 +159,16 @@ if generate_button and uploaded_audio is not None:
             audio_chunk = y[start_sample:end_sample]
 
             rms_energy = np.sqrt(np.mean(audio_chunk**2))
-            normalized_rms = np.log10(rms_energy + 1e-7) / np.log10(1.0 + 1e-7)
+            # Normalizzazione RMS più robusta per evitare divisioni per zero anche con volumi molto bassi
+            normalized_rms = np.log10(rms_energy + 1e-10) / np.log10(1.0 + 1e-10) 
             normalized_rms = np.clip(normalized_rms, 0, 1)
 
             frame_img = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
 
             if pattern_type == "Mandala Semplice (Cerchi)":
                 frame_img = draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames)
-            elif pattern_type == "Mandala Radiale (Fiori)":
-                frame_img = draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames)
+            elif pattern_type == "Flusso Ondulato a Gradiente": # Rinominato
+                frame_img = draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, i, total_frames)
             
             all_visual_frames.append(frame_img)
             progress_bar.progress((i + 1) / total_frames)
