@@ -1,0 +1,8 @@
+{
+  "install": {
+    "packages": {
+      "ffmpeg": true
+    }
+  },
+  "start": "streamlit run app.py"
+}
