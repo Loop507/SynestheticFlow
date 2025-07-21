@@ -374,10 +374,13 @@ if available_memory < 300:
 elif available_memory < 500:
     st.sidebar.warning("⚠️ Memoria limitata - raccomandati 360p/480p")
 
+# --- METRICHE AGGIORNATE CON CAST SICURI ---
+st.info(f"🎼 BPM: {float(tempo):.0f} | ⏱️ {float(actual_duration):.1f}s | 🎮 {total_frames} frame | 📆 ~{float(final_estimated_size):.0f}MB")
+
 # Metriche principali
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("🎬 Risoluzione", f"{width}x{height}")
+    st.metric("🎮 Risoluzione", f"{width}x{height}")
 with col2:
     st.metric("⚡ FPS", fps)
 with col3:
@@ -385,13 +388,14 @@ with col3:
         try:
             duration, _ = get_audio_info(uploaded_audio.read())
             uploaded_audio.seek(0)
-            st.metric("⏱️ Durata", f"{min(duration, max_duration):.1f}s")
+            duration_float = float(duration) if hasattr(duration, '__float__') else float(np.asscalar(np.asarray(duration)))
+            st.metric("⏱️ Durata", f"{min(duration_float, float(max_duration)):.1f}s")
         except:
             st.metric("⏱️ Durata", "N/A")
     else:
         st.metric("⏱️ Durata", "0s")
 with col4:
-    st.metric("📦 Limite", f"{max_size}MB")
+    st.metric("📆 Limite", f"{max_size}MB")
 
 # Bottone principale
 if st.button("🚀 **GENERA VIDEO**", type="primary"):
