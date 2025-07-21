@@ -39,37 +39,49 @@ def draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, vi
     return frame_img
 
 def draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames):
-    """Disegna un pattern radiale tipo fiore/stella che reagisce al volume."""
+    """Disegna un pattern radiale tipo fiore/stella che reagisce al volume, con dinamiche potenziate."""
     center_x, center_y = frame_width // 2, frame_height // 2
+    
+    # --- Colore di sfondo che pulsa FORTEMENTE ---
+    bg_color_val = int(normalized_rms * 80) # Incrementato da 50 a 80 per un maggiore impatto
+    frame_img[:] = (bg_color_val, bg_color_val, bg_color_val) # Sfondo grigio scuro che pulsa
 
-    bg_color_val = int(normalized_rms * 50)
-    frame_img[:] = (bg_color_val, bg_color_val, bg_color_val)
+    # --- Numero di "petali" o raggi, influenzato da complessità e volume, con maggiore variazione ---
+    num_petals = int(4 + visual_complexity * 3 * (1 + normalized_rms * 1.5)) # Da 2 a 3, da 1 a 1.5
+    num_petals = max(4, num_petals if num_petals % 2 == 0 else num_petals + 1) # Assicurati che sia pari e almeno 4
 
-    num_petals = int(4 + visual_complexity * 2 * (1 + normalized_rms))
-    num_petals = max(4, num_petals if num_petals % 2 == 0 else num_petals + 1)
-
-    max_length = min(frame_width, frame_height) // 2 * (0.8 + normalized_rms * 0.2)
-
-    rotation_speed = 0.05 + normalized_rms * 0.1
+    # --- La lunghezza massima delle linee/petali pulsa con il volume in modo più evidente ---
+    max_length = min(frame_width, frame_height) // 2 * (0.6 + normalized_rms * 0.4) # Incrementato da 0.2 a 0.4 per maggiore escursione
+    
+    # --- Variazione della rotazione nel tempo per un effetto dinamico più pronunciato ---
+    rotation_speed = 0.08 + normalized_rms * 0.2 # Base e moltiplicatore aumentati
     current_rotation_offset = (i / total_frames) * (2 * math.pi) * rotation_speed
 
     for j in range(num_petals):
         angle = (2 * math.pi / num_petals) * j + current_rotation_offset
-        length = int(max_length * (0.5 + normalized_rms * 0.5))
+
+        # --- La lunghezza delle linee/petali pulsa con il volume in modo più aggressivo ---
+        length = int(max_length * (0.3 + normalized_rms * 0.7)) # Range più ampio
+        length = max(line_thickness * 2, length) # Assicurati che non sia troppo corto
+        
+        # Punto finale del raggio
         end_x = int(center_x + length * math.cos(angle))
         end_y = int(center_y + length * math.sin(angle))
-
-        hue = int((normalized_rms * 180 + (angle / (2 * math.pi)) * 180) % 180)
-        saturation = int(255 * (0.5 + normalized_rms * 0.5))
-        value = int(200 + normalized_rms * 55)
-
+        
+        # --- Colore che cambia con il volume e l'angolo, con maggiore saturazione e luminosità ---
+        hue = int((normalized_rms * 180 + (angle / (2 * math.pi)) * 255) % 180) # Hue più dipendente dall'angolo
+        saturation = int(255 * (0.7 + normalized_rms * 0.3)) # Sempre molto saturo, aumenta col volume
+        value = int(180 + normalized_rms * 75) # Luminosità che pulsa da abbastanza chiara a molto chiara
+        
+        # Converte HSV in BGR per OpenCV
         hsv_color = np.array([[[hue, saturation, value]]], dtype=np.uint8)
         bgr_color = cv2.cvtColor(hsv_color, cv2.COLOR_HSV2BGR)[0][0].tolist()
-
+        
         cv2.line(frame_img, (center_x, center_y), (end_x, end_y), bgr_color, line_thickness)
-
-        circle_radius = int(20 + normalized_rms * 50)
-        cv2.circle(frame_img, (center_x, center_y), circle_radius, (255, 255, 255), -1)
+        
+        # --- Disegna anche un cerchio al centro che pulsa in modo più evidente ---
+        circle_radius = int(20 + normalized_rms * 80) # Raggio aumentato da 50 a 80 per maggiore impatto
+        cv2.circle(frame_img, (center_x, center_y), circle_radius, (255, 255, 255), -1) # Cerchio bianco pieno
 
     return frame_img
 
@@ -105,18 +117,18 @@ if generate_button and uploaded_audio is not None:
 
         all_visual_frames = []
         frame_width, frame_height = 800, 800
-
+        
         progress_text = st.empty()
         progress_bar = st.progress(0)
-
+        
         y, sr = sf.read(audio_path)
 
         samples_per_frame = int(sr / num_frames_per_second)
-
+        
         for i in range(total_frames):
             start_sample = i * samples_per_frame
             end_sample = min((i + 1) * samples_per_frame, len(y))
-
+            
             if start_sample >= len(y):
                 break
 
@@ -132,7 +144,7 @@ if generate_button and uploaded_audio is not None:
                 frame_img = draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames)
             elif pattern_type == "Mandala Radiale (Fiori)":
                 frame_img = draw_radial_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames)
-
+            
             all_visual_frames.append(frame_img)
             progress_bar.progress((i + 1) / total_frames)
             progress_text.text(f"Generazione frame: {i+1}/{total_frames}")
@@ -149,7 +161,7 @@ if generate_button and uploaded_audio is not None:
         writer.close()
 
         final_video_filepath = video_filepath.replace(".mp4", "_final.mp4")
-
+        
         command = [
             'ffmpeg',
             '-i', video_filepath,
@@ -160,7 +172,7 @@ if generate_button and uploaded_audio is not None:
             '-y',
             final_video_filepath
         ]
-
+        
         try:
             st.write("Combinazione video e audio...")
             process = subprocess.run(command, check=True, capture_output=True, text=True)
