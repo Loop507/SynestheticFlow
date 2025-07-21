@@ -44,64 +44,49 @@ def draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized
     Genera un pattern fluido e organico basato su gradienti di colore generati matematicamente,
     simulando le immagini di riferimento. Opera a livello di pixel.
     """
-    # Genera una griglia di coordinate per tutti i pixel del frame
     y_coords, x_coords = np.indices((frame_height, frame_width))
 
-    # Normalizza le coordinate a un intervallo da -1 a 1 per facilitare i calcoli matematici
     x_norm = (x_coords / frame_width) * 2 - 1
     y_norm = (y_coords / frame_height) * 2 - 1
 
-    # Componente temporale per l'animazione, influenzata dal volume per maggiore dinamicità
     t = i * 0.01 + normalized_rms * 0.5 
 
-    # --- Generazione del campo d'onda complesso ---
-    # Combinazione di più funzioni d'onda (seno/coseno) per creare complessità e fluidità
-    # Variazioni spaziali e temporali
-
-    # Onda di base che si muove in diagonale
     wave_field1 = np.sin(x_norm * 10 + y_norm * 8 + t * 5 + normalized_rms * 3) * 0.5
     
-    # Onda radiale che pulsa dal centro
     r = np.sqrt(x_norm**2 + y_norm**2)
     angle = np.arctan2(y_norm, x_norm)
     wave_field2 = np.cos(r * (12 + visual_complexity) + t * (4 + normalized_rms * 2)) * 0.6
     
-    # Onda che crea un effetto vortice/spirale
     swirl_strength = 0.5 + normalized_rms * 0.3
     swirl_x = x_norm * np.cos(angle + t * 0.5) - y_norm * np.sin(angle + t * 0.5)
     swirl_y = x_norm * np.sin(angle + t * 0.5) + y_norm * np.cos(angle + t * 0.5)
     wave_field3 = np.sin(swirl_x * (8 + visual_complexity) + swirl_y * (7 + visual_complexity) + t * 6) * 0.7
 
-    # Onda aggiuntiva per maggiore complessità e intersezioni
     wave_field4 = np.cos(x_norm * (visual_complexity * 2) + t * 2 + np.sin(y_norm * 5)) * 0.4
 
-    # Combina tutti i campi d'onda
-    # L'intensità complessiva delle onde è influenzata dal volume
     total_wave_value = (wave_field1 + wave_field2 + wave_field3 + wave_field4) * (0.8 + normalized_rms * 0.7)
 
-    # Normalizza il valore complessivo a un intervallo utile per la mappatura del colore (es. 0-1)
-    normalized_value = np.clip(total_wave_value, -3, 3) # Limita i valori estremi
-    normalized_value = (normalized_value + 3) / 6 # Rescala a 0-1
+    normalized_value = np.clip(total_wave_value, -3, 3)
+    normalized_value = (normalized_value + 3) / 6
 
-    # --- Mappatura del colore (usando HSV per gradienti vividi e controllati) ---
-    # Tonalità (Hue): Varia in base al valore dell'onda, al tempo e al volume
-    hue = (normalized_value * 200 + t * 30 + normalized_rms * 60) % 180 # Intervallo HSV hue è 0-179
+    # --- Calcolo e casting esplicito a np.uint8 per tutti i canali HSV ---
+    # Calcola i valori float per hue, saturation, value
+    hue_float = (normalized_value * 200 + t * 30 + normalized_rms * 60) % 180
+    saturation_float = 200 + (normalized_rms * 55)
+    value_float = normalized_value * 180 + normalized_rms * 70
 
-    # Saturazione: Alta per colori vivaci, con leggera influenza del volume
-    saturation = 200 + (normalized_rms * 55) # Sempre molto saturo
-    saturation = np.clip(saturation, 0, 255)
+    # CLIPPAGGIO E CASTING A UINT8: Essenziale per OpenCV
+    hue_uint8 = np.clip(hue_float, 0, 179).astype(np.uint8) # Hue range: 0-179
+    saturation_uint8 = np.clip(saturation_float, 0, 255).astype(np.uint8) # Saturation range: 0-255
+    value_uint8 = np.clip(value_float, 0, 255).astype(np.uint8) # Value range: 0-255
 
-    # Valore (Brightness): Pulsazione più intensa con il volume, con variazione basata sull'onda
-    value = (normalized_value * 180 + normalized_rms * 70).astype(np.uint8) # Luminosità di base + influenza RMS
-    value = np.clip(value, 0, 255) # Assicura che i valori rientrino nel range valido
-
-    # Crea un'immagine HSV stackando i canali
-    hsv_image = np.stack([hue.astype(np.uint8), saturation * np.ones_like(hue, dtype=np.uint8), value], axis=-1)
+    # Crea l'immagine HSV stackando i canali.
+    # np.full_like è usato per creare un array di saturazione con lo stesso tipo e forma di hue_uint8
+    hsv_image = np.stack([hue_uint8, np.full_like(hue_uint8, saturation_uint8), value_uint8], axis=-1)
     
     # Converte l'immagine da HSV a BGR (formato usato da OpenCV)
     bgr_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
 
-    # Applica l'immagine generata al frame attuale
     frame_img[:] = bgr_image
 
     return frame_img
@@ -113,7 +98,6 @@ uploaded_audio = st.file_uploader("Carica un file audio (MP3, WAV)", type=["mp3"
 st.sidebar.subheader("Impostazioni Generazione Visual")
 num_frames_per_second = st.sidebar.slider("Frame al secondo (FPS)", 15, 60, 24)
 visual_complexity = st.sidebar.slider("Complessità visiva", 1, 10, 5)
-# line_thickness è meno rilevante per i pattern basati su pixel, ma lo lascio per Mandala Semplice
 line_thickness = st.sidebar.slider("Spessore linee (per Mandala Semplice)", 1, 5, 2)
 pattern_type = st.sidebar.selectbox("Tipo di Pattern", ["Mandala Semplice (Cerchi)", "Flusso Ondulato a Gradiente"])
 
@@ -159,7 +143,6 @@ if generate_button and uploaded_audio is not None:
             audio_chunk = y[start_sample:end_sample]
 
             rms_energy = np.sqrt(np.mean(audio_chunk**2))
-            # Normalizzazione RMS più robusta per evitare divisioni per zero anche con volumi molto bassi
             normalized_rms = np.log10(rms_energy + 1e-10) / np.log10(1.0 + 1e-10) 
             normalized_rms = np.clip(normalized_rms, 0, 1)
 
@@ -167,7 +150,7 @@ if generate_button and uploaded_audio is not None:
 
             if pattern_type == "Mandala Semplice (Cerchi)":
                 frame_img = draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames)
-            elif pattern_type == "Flusso Ondulato a Gradiente": # Rinominato
+            elif pattern_type == "Flusso Ondulato a Gradiente":
                 frame_img = draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, i, total_frames)
             
             all_visual_frames.append(frame_img)
