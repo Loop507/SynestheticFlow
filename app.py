@@ -9,6 +9,7 @@ import subprocess
 import gc
 import shutil
 import io
+import psutil
 from typing import Tuple, Optional
 import threading
 import time
@@ -21,7 +22,7 @@ os.environ['OMP_NUM_THREADS'] = '1'  # Limita threads per memoria
 st.set_page_config(page_title="🎶 SynestheticFlow", layout="wide")
 
 st.markdown("# 🎶 SynestheticFlow <span style='font-size:0.5em;'>by Loop507</span>", unsafe_allow_html=True)
-st.write("Visualizzazioni musicali ottimizzate per 200MB RAM")
+st.write("Visualizzazioni musicali ottimizzate - Max 4 minuti o 200MB")
 
 # --- FALLBACK PER PYDUB ---
 try:
@@ -31,7 +32,47 @@ except ImportError:
     PYDUB_AVAILABLE = False
     st.warning("⚠️ PyDub non disponibile - usando fallback librosa")
 
-# --- FUNZIONI OTTIMIZZATE PER MEMORIA MINIMA ---
+# --- FUNZIONI DI CALCOLO DIMENSIONI ---
+
+def estimate_video_size(width: int, height: int, fps: int, duration: float, bitrate_factor: float = 1.0) -> float:
+    """Stima la dimensione del video in MB."""
+    # Stima basata su bitrate tipici H.264
+    pixels_per_second = width * height * fps
+    # Bitrate base: ~0.1 bits per pixel per secondo (H.264 efficiente)
+    estimated_bitrate_bps = pixels_per_second * 0.1 * bitrate_factor
+    # Aggiungi audio (96 kbps)
+    total_bitrate_bps = estimated_bitrate_bps + 96000
+    # Calcola dimensione in MB
+    size_mb = (total_bitrate_bps * duration) / (8 * 1024 * 1024)
+    return size_mb
+
+def get_optimal_settings(duration: float, max_size_mb: int = 200) -> Tuple[int, int, int, int]:
+    """Calcola impostazioni ottimali per rispettare il limite di dimensione."""
+    # Preset 16:9 standard ordinati per qualità crescente
+    presets = [
+        (426, 240, 8, 0.4),    # 240p Ultra Low
+        (640, 360, 10, 0.6),   # 360p Low  
+        (854, 480, 12, 0.8),   # 480p Medium
+        (1280, 720, 15, 1.0),  # 720p HD
+        (1920, 1080, 20, 1.3)  # 1080p Full HD
+    ]
+    
+    for width, height, fps, bitrate_factor in presets:
+        estimated_size = estimate_video_size(width, height, fps, duration, bitrate_factor)
+        if estimated_size <= max_size_mb:
+            return width, height, fps, int(estimated_size)
+    
+    # Se nessun preset funziona, usa il più basso
+    return presets[0][0], presets[0][1], presets[0][2], int(estimate_video_size(*presets[0][:3], duration, presets[0][3]))
+
+def check_memory_available() -> float:
+    """Controlla memoria RAM disponibile in MB."""
+    try:
+        return psutil.virtual_memory().available / (1024 * 1024)
+    except:
+        return 500.0  # Valore di default se psutil non funziona
+
+# --- FUNZIONI OTTIMIZZATE (invariate) ---
 
 @st.cache_data
 def get_audio_info(audio_bytes: bytes) -> Tuple[float, int]:
@@ -105,16 +146,15 @@ def draw_minimal_waves(frame_img: np.ndarray, width: int, height: int,
         # Griglia semplificata
         x = np.linspace(-1, 1, calc_w, dtype=np.float32)
         y = np.linspace(-1, 1, calc_h, dtype=np.float32)
-        X, Y = np.meshgrid(x, y)  # Rimuovi sparse=True che può causare problemi
+        X, Y = np.meshgrid(x, y)
         
-        t = float(frame_idx * 0.1)  # Assicurati che sia float
+        t = float(frame_idx * 0.1)
         beat_mult = 1.5 if beat else 1.0
-        bass, mid, treble = map(float, freq_data)  # Converti a float esplicito
+        bass, mid, treble = map(float, freq_data)
         
-        # Una sola onda semplice - assicurati che tutti i valori siano float
+        # Una sola onda semplice
         wave = np.sin(X * 5.0 * beat_mult + t + bass * 3.0) * np.cos(Y * 3.0 + mid * 2.0)
-        wave = np.clip((wave + 1.0) * 127.5, 0, 255)  # Normalizza a 0-255
-        wave = wave.astype(np.uint8)
+        wave = np.clip((wave + 1.0) * 127.5, 0, 255).astype(np.uint8)
         
         # Converti a RGB semplice
         hue = np.clip((wave.astype(np.float32) + treble * 50.0) % 180.0, 0, 255)
@@ -140,8 +180,8 @@ def draw_minimal_waves(frame_img: np.ndarray, width: int, height: int,
     
     return frame_img
 
-def analyze_audio_minimal(audio_path: str, max_duration: int = 30) -> Tuple[np.ndarray, np.ndarray, float]:
-    """Analisi audio super-ridotta."""
+def analyze_audio_minimal(audio_path: str, max_duration: int = 240) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Analisi audio super-ridotta - fino a 4 minuti."""
     try:
         # Carica solo quello che serve con qualità ridotta
         y, sr = librosa.load(audio_path, sr=11025, mono=True, duration=max_duration)
@@ -150,7 +190,7 @@ def analyze_audio_minimal(audio_path: str, max_duration: int = 30) -> Tuple[np.n
         gc.collect()
         
         # BPM veloce su campione piccolo
-        if len(y) > 1000:  # Solo se abbastanza campioni
+        if len(y) > 1000:
             y_beat = y[::8]  # Campiona ogni 8
             tempo, beats = librosa.beat.beat_track(y=y_beat, sr=sr//8, trim=False)
             beat_times = beats * 8 / sr  # Correggi timing
@@ -175,10 +215,10 @@ def process_frame_data(audio_chunk: np.ndarray, sr: int = 11025) -> Tuple[float,
         # Frequenze super-semplificate (solo su 64 campioni max)
         if len(audio_chunk) > 32:
             chunk = audio_chunk[:64] if len(audio_chunk) > 64 else audio_chunk
-            chunk = chunk.astype(np.float32)  # Assicurati che sia float32
+            chunk = chunk.astype(np.float32)
             
-            fft = np.fft.fft(chunk)
-            mag = np.abs(fft[:len(chunk)//2]).astype(np.float32)
+            fft = np.fft.rfft(chunk)  # Più efficiente per segnali reali
+            mag = np.abs(fft).astype(np.float32)
             
             # Dividi in 3 bande fisse
             third = len(mag) // 3
@@ -200,7 +240,6 @@ def process_frame_data(audio_chunk: np.ndarray, sr: int = 11025) -> Tuple[float,
         return rms_norm, (bass, mid, treble)
         
     except Exception as e:
-        # Fallback sicuro
         return 0.0, (0.0, 0.0, 0.0)
 
 def check_ffmpeg() -> bool:
@@ -241,40 +280,102 @@ def prepare_audio_file(uploaded_audio, temp_dir: str) -> str:
         st.error(f"Errore preparazione audio: {e}")
         raise
 
-# --- UI MINIMALISTA ---
+# --- UI OTTIMIZZATA ---
 
-uploaded_audio = st.file_uploader("🎵 Audio (MP3/WAV, max 30sec consigliati)", type=["mp3", "wav"])
+uploaded_audio = st.file_uploader("🎵 Audio (MP3/WAV, max 4 minuti)", type=["mp3", "wav"])
+
+# Calcola memoria disponibile
+available_memory = check_memory_available()
 
 with st.sidebar:
     st.header("⚙️ Impostazioni")
     
-    # Preset rapidi per memoria
-    preset = st.selectbox("📊 Preset qualità", [
-        "🚀 Ultra-Fast (360p, 10fps)",
-        "⚡ Fast (480p, 15fps)", 
-        "🎯 Balanced (720p, 12fps)"
-    ])
+    # Selettore durata massima
+    max_duration = st.slider("⏱️ Durata max", 5, 240, 60, step=5, 
+                            help="In secondi (max 4 minuti)")
     
-    if "Ultra-Fast" in preset:
-        width, height, fps = 640, 360, 10
-    elif "Fast" in preset:
-        width, height, fps = 854, 480, 15
+    # Limite dimensione file
+    max_size = st.selectbox("📦 Dimensione max", [50, 100, 150, 200], 
+                           index=3, help="Dimensione massima video in MB")
+    
+    # Se abbiamo un audio, calcola impostazioni ottimali
+    if uploaded_audio:
+        try:
+            duration, _ = get_audio_info(uploaded_audio.read())
+            uploaded_audio.seek(0)
+            actual_duration = min(duration, max_duration)
+            
+            # Calcola impostazioni ottimali
+            opt_width, opt_height, opt_fps, est_size = get_optimal_settings(actual_duration, max_size)
+            
+            st.write(f"**🎯 Impostazioni auto:**")
+            st.write(f"📐 {opt_width}x{opt_height} ({opt_height}p)")
+            st.write(f"🎬 {opt_fps} FPS")
+            st.write(f"📦 ~{est_size}MB")
+            
+            # Opzione manuale
+            manual_mode = st.checkbox("✏️ Impostazioni manuali")
+            
+            if manual_mode:
+                preset = st.selectbox("📊 Qualità", [
+                    "240p (426x240)",
+                    "360p (640x360)", 
+                    "480p (854x480)",
+                    "720p (1280x720)",
+                    "1080p (1920x1080)"
+                ])
+                
+                if "240p" in preset:
+                    width, height, fps = 426, 240, 8
+                elif "360p" in preset:
+                    width, height, fps = 640, 360, 10
+                elif "480p" in preset:
+                    width, height, fps = 854, 480, 12
+                elif "720p" in preset:
+                    width, height, fps = 1280, 720, 15
+                else:  # 1080p
+                    width, height, fps = 1920, 1080, 20
+                    
+                fps = st.slider("🎬 FPS", 5, 30, fps)
+                
+                # Mostra stima dimensione
+                est_size_manual = estimate_video_size(width, height, fps, actual_duration)
+                if est_size_manual > max_size:
+                    st.error(f"⚠️ Stima {est_size_manual:.0f}MB > {max_size}MB limite!")
+                else:
+                    st.success(f"✅ Stima {est_size_manual:.0f}MB")
+            else:
+                width, height, fps = opt_width, opt_height, opt_fps
+                
+        except:
+            # Default se non riusciamo a leggere l'audio
+            width, height, fps = 640, 360, 10
+            st.write("📊 Default: 360p, 10fps")
     else:
-        width, height, fps = 1280, 720, 12
+        width, height, fps = 640, 360, 10
+        st.write("📊 Default: 360p, 10fps")
     
-    max_duration = st.slider("⏱️ Durata max (sec)", 5, 30, 15)
+    # Altre opzioni
+    st.markdown("---")
     pattern = st.radio("🎨 Pattern", ["Mandala", "Onde"])
-    complexity = st.slider("🔧 Complessità", 1, 5, 2)
-    thickness = st.slider("📏 Spessore", 1, 3, 2) if pattern == "Mandala" else 1
+    complexity = st.slider("🔧 Complessità", 1, 5, 3)
+    thickness = st.slider("📏 Spessore", 1, 5, 2) if pattern == "Mandala" else 1
 
 # Status sistema
 st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Status")
+st.sidebar.subheader("📊 Status Sistema")
+st.sidebar.write(f"💾 RAM libera: {available_memory:.0f}MB")
 st.sidebar.write(f"🔧 PyDub: {'✅' if PYDUB_AVAILABLE else '❌'}")
 st.sidebar.write(f"🎬 FFmpeg: {'✅' if check_ffmpeg() else '❌'}")
 
-# Mostra info memoria
-col1, col2, col3 = st.columns(3)
+# Avvisi memoria
+if available_memory < 300:
+    st.sidebar.error("⚠️ Memoria bassa! Usa impostazioni minime")
+elif available_memory < 500:
+    st.sidebar.warning("⚠️ Memoria limitata - raccomandati 360p/480p")
+
+# Metriche principali
+col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("🎬 Risoluzione", f"{width}x{height}")
 with col2:
@@ -283,13 +384,16 @@ with col3:
     if uploaded_audio:
         try:
             duration, _ = get_audio_info(uploaded_audio.read())
-            uploaded_audio.seek(0)  # Reset per uso successivo
+            uploaded_audio.seek(0)
             st.metric("⏱️ Durata", f"{min(duration, max_duration):.1f}s")
         except:
             st.metric("⏱️ Durata", "N/A")
     else:
         st.metric("⏱️ Durata", "0s")
+with col4:
+    st.metric("📦 Limite", f"{max_size}MB")
 
+# Bottone principale
 if st.button("🚀 **GENERA VIDEO**", type="primary"):
     if not uploaded_audio:
         st.error("⚠️ Carica un file audio!")
@@ -298,6 +402,11 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
     if not check_ffmpeg():
         st.error("❌ FFmpeg richiesto ma non disponibile!")
         st.info("💡 Su Streamlit Cloud: aggiungi 'ffmpeg' in packages.txt")
+        st.stop()
+    
+    # Controllo memoria
+    if available_memory < 200:
+        st.error("❌ Memoria insufficiente (< 200MB)")
         st.stop()
     
     # Cleanup memoria iniziale
@@ -318,11 +427,11 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
         
         # Prepara audio
         audio_path = prepare_audio_file(uploaded_audio, temp_dir)
-        progress_bar.progress(0.1)
+        progress_bar.progress(0.05)
         
-        status_text.text("🎵 Analisi audio veloce...")
+        status_text.text("🎵 Analisi audio...")
         
-        # Analisi audio ridotta
+        # Analisi audio
         audio_data, beat_times, tempo = analyze_audio_minimal(audio_path, max_duration)
         actual_duration = min(len(audio_data) / 11025, max_duration)
         total_frames = int(actual_duration * fps)
@@ -333,27 +442,42 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
             
         samples_per_frame = len(audio_data) // total_frames if total_frames > 0 else len(audio_data)
         
-        st.info(f"🎼 BPM: {tempo:.0f} | ⏱️ {actual_duration:.1f}s | 🎬 {total_frames} frame")
-        progress_bar.progress(0.2)
+        # Stima finale dimensione
+        final_estimated_size = estimate_video_size(width, height, fps, actual_duration)
+        
+        st.info(f"🎼 BPM: {tempo:.0f} | ⏱️ {actual_duration:.1f}s | 🎬 {total_frames} frame | 📦 ~{final_estimated_size:.0f}MB")
+        progress_bar.progress(0.1)
+        
+        if final_estimated_size > max_size * 1.2:  # 20% tolleranza
+            st.warning(f"⚠️ Video potrebbe superare {max_size}MB - continuando comunque")
         
         status_text.text("🎬 Creazione video...")
         
-        # Video writer con codec più compatibile
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        # Video writer ottimizzato
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
         
         if not out.isOpened():
             # Fallback codec
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
             out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
             
         if not out.isOpened():
             st.error("❌ Impossibile creare video writer")
             st.stop()
         
-        # Generazione frame ottimizzata
+        # Generazione frame con controllo memoria
+        memory_check_interval = max(20, total_frames // 20)  # Controlla memoria più spesso per video lunghi
+        
         for i in range(total_frames):
             try:
+                # Controllo memoria periodico
+                if i % memory_check_interval == 0:
+                    current_memory = check_memory_available()
+                    if current_memory < 150:  # Se scende sotto 150MB
+                        st.warning("⚠️ Memoria critica - forzando cleanup")
+                        gc.collect()
+                
                 # Estrai chunk audio
                 start_idx = i * samples_per_frame
                 end_idx = min(start_idx + samples_per_frame, len(audio_data))
@@ -379,74 +503,109 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
                 
                 out.write(frame)
                 
-                # Progresso e cleanup
-                if i % 5 == 0:  # Più frequente per feedback
-                    progress_val = 0.2 + 0.6 * (i + 1) / total_frames
+                # Progresso
+                if i % 10 == 0:
+                    progress_val = 0.1 + 0.7 * (i + 1) / total_frames
                     progress_bar.progress(progress_val)
-                    status_text.text(f"🎨 Frame {i+1}/{total_frames} ({((i+1)/total_frames*100):.1f}%)")
                     
-                if i % 20 == 0:  # Cleanup ogni 20 frame
+                    # Mostra ETA per video lunghi
+                    if total_frames > 1000:
+                        eta_seconds = (total_frames - i) * (time.time() - start_time if 'start_time' in locals() else 0) / max(i, 1)
+                        eta_text = f" (ETA: {eta_seconds/60:.1f}min)" if eta_seconds > 60 else f" (ETA: {eta_seconds:.0f}s)"
+                    else:
+                        eta_text = ""
+                    
+                    status_text.text(f"🎨 Frame {i+1}/{total_frames} ({((i+1)/total_frames*100):.1f}%){eta_text}")
+                    
+                if i % 50 == 0:  # Cleanup più frequente per video lunghi
                     gc.collect()
                     
             except Exception as e:
-                # Se fallisce un frame, crea frame nero e continua
                 st.warning(f"Errore frame {i}: {e}")
                 frame = np.zeros((height, width, 3), dtype=np.uint8)
                 out.write(frame)
+            
+            # Salva start time per ETA
+            if i == 0:
+                start_time = time.time()
         
         out.release()
-        progress_bar.progress(0.8)
-        status_text.text("🔧 Unione audio-video...")
+        if 'out' in locals():
+            del out
+        gc.collect()
         
-        # Combina con FFmpeg
+        progress_bar.progress(0.8)
+        status_text.text("🔧 Encoding finale...")
+        
+        # FFmpeg con settings adattivi
+        crf = '23' if final_estimated_size < 100 else '28'  # Qualità adattiva
+        preset = 'fast' if total_frames < 3000 else 'ultrafast'  # Velocità adattiva
+        
         cmd = [
             'ffmpeg', '-y', '-loglevel', 'error',
             '-i', video_path,
             '-i', audio_path,
             '-t', str(actual_duration),
-            '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+            '-c:v', 'libx264', '-preset', preset, '-crf', crf,
             '-c:a', 'aac', '-b:a', '96k',
-            '-movflags', '+faststart',  # Per streaming web
+            '-movflags', '+faststart',
+            '-maxrate', '2M', '-bufsize', '4M',  # Limita bitrate per controllo dimensione
             final_path
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        # Timeout adattivo (più tempo per video lunghi)
+        timeout = min(600, max(120, total_frames // 10))  # 2-10 minuti
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         
         if result.returncode == 0 and os.path.exists(final_path):
             progress_bar.progress(1.0)
             status_text.text("✅ Video completato!")
             
-            # Leggi e offri download
+            # Leggi e verifica dimensione
             with open(final_path, 'rb') as f:
                 video_bytes = f.read()
             
             file_size_mb = len(video_bytes) / (1024 * 1024)
-            st.success(f"🎉 **Video generato!** ({file_size_mb:.1f} MB)")
             
-            # Preview se piccolo
-            if file_size_mb < 10:
+            if file_size_mb <= max_size:
+                st.success(f"🎉 **Video generato!** ({file_size_mb:.1f} MB ✅)")
+            else:
+                st.warning(f"⚠️ **Video generato** ({file_size_mb:.1f} MB) - supera limite {max_size}MB")
+            
+            # Preview condizionale
+            if file_size_mb < 20:  # Preview solo per file piccoli
                 st.video(video_bytes)
+            else:
+                st.info("📹 File troppo grande per preview - usa il download")
             
             # Download button
+            filename = f"synesthetic_{uploaded_audio.name.split('.')[0]}_{int(actual_duration)}s.mp4"
             st.download_button(
-                label="⬇️ **SCARICA VIDEO**",
+                label=f"⬇️ **SCARICA VIDEO** ({file_size_mb:.1f}MB)",
                 data=video_bytes,
-                file_name=f"synesthetic_{uploaded_audio.name.split('.')[0]}.mp4",
+                file_name=filename,
                 mime="video/mp4"
             )
             
         else:
             st.error(f"❌ Errore FFmpeg: {result.stderr}")
-            st.info("Verifica che FFmpeg sia installato correttamente")
             
+    except subprocess.TimeoutExpired:
+        st.error("⏱️ Timeout durante encoding - video troppo lungo o complesso")
+    except MemoryError:
+        st.error("💾 Memoria insufficiente - riduci durata o qualità")
     except Exception as e:
         st.error(f"❌ Errore: {str(e)}")
         if "memory" in str(e).lower() or "allocation" in str(e).lower():
-            st.info("💡 Memoria insufficiente - riduci durata o usa preset Ultra-Fast")
+            st.info("💡 Memoria insufficiente - riduci durata o qualità")
             
     finally:
         # Cleanup finale
         try:
+            if 'out' in locals():
+                out.release()
+                del out
             if 'temp_dir' in locals() and os.path.exists(temp_dir):
                 shutil.rmtree(temp_dir, ignore_errors=True)
         except:
@@ -454,48 +613,54 @@ if st.button("🚀 **GENERA VIDEO**", type="primary"):
         gc.collect()
 
 else:
-    st.info("📝 **Consigli per 200MB RAM:**")
+    st.info("📝 **Novità - Video fino a 4 minuti o 200MB:**")
     st.write("""
-    - ✅ **Max 15-20 secondi** di audio
-    - ✅ **Preset Ultra-Fast** per test rapidi
-    - ✅ **Chiudi altre app** durante generazione  
-    - ✅ **File MP3 < 3MB** consigliati
-    - ⚠️ **Pazienza**: elaborazione può richiedere 2-5 minuti
+    - ✅ **Fino a 4 minuti** di audio supportati
+    - ✅ **Controllo automatico dimensioni** - calcolo ottimale qualità/dimensione
+    - ✅ **Risoluzioni standard 16:9**: 240p, 360p, 480p, 720p, 1080p
+    - ✅ **Controllo memoria dinamico** durante elaborazione
+    - ✅ **ETA progress** per video lunghi
+    - ⚠️ **Raccomandato**: file MP3 < 10MB per performance ottimali
     """)
     
-    with st.expander("🔧 Ottimizzazioni implementate"):
+    with st.expander("🎯 Sistema adattivo qualità/dimensione"):
         st.write("""
-        **Memoria ridotta:**
-        - Float32 per calcoli (più compatibile di float16)
-        - Risoluzione calcoli divisa per 4
-        - Sample rate audio ridotto (11kHz)
-        - Max 64 campioni per analisi FFT
-        - Cleanup automatico ogni 20 frame
-        - FPS ridotto nei preset
+        **Il sistema calcola automaticamente:**
+        - **Risoluzione ottimale** per rispettare il limite di dimensione
+        - **FPS adattivo** (8-20 fps) in base alla durata
+        - **Bitrate dinamico** per ottimizzare qualità/dimensione
+        - **CRF adattivo** (23 per file piccoli, 28 per grandi)
+        - **Preset FFmpeg** (fast/ultrafast) in base al numero di frame
         
-        **Performance:**
-        - FFmpeg preset ultrafast + CRF 28
-        - Codec XVID fallback per compatibilità
-        - Timeout operazioni (120s max)
-        - Cache librosa in /tmp
-        - Thread singolo (OMP_NUM_THREADS=1)
-        
-        **Compatibilità:**
-        - Fallback librosa se PyDub non disponibile
-        - Gestione errori robusta
-        - Preview video automatico se < 10MB
+        **Risoluzioni 16:9 supportate:**
+        - 240p: 426 × 240 (ultra-low, ~0.4MB/min)
+        - 360p: 640 × 360 (low, ~0.6MB/min)
+        - 480p: 854 × 480 (medium, ~0.8MB/min)  
+        - 720p: 1280 × 720 (HD, ~1.0MB/min)
+        - 1080p: 1920 × 1080 (Full HD, ~1.3MB/min)
         """)
         
-    with st.expander("🚨 Risoluzione problemi"):
+    with st.expander("🚨 Risoluzione problemi avanzata"):
         st.write("""
-        **Errori comuni:**
-        - **"pydub not found"** → Assicurati che requirements.txt contenga pydub
-        - **"ffmpeg not found"** → Aggiungi ffmpeg in packages.txt  
-        - **"Memory error"** → Riduci durata o usa Ultra-Fast
-        - **"Video writer failed"** → Prova codec diversi automaticamente
+        **Errori video lunghi:**
+        - **"Timeout encoding"** → Riduci qualità o durata, sistema troppo lento
+        - **"Memory error durante frame X"** → Riduci risoluzione o complessità
+        - **"File size > limit"** → Sistema sceglierà automaticamente qualità più bassa
         
-        **Per deploy su Streamlit Cloud:**
-        1. Crea `requirements.txt` con le dipendenze Python
-        2. Crea `packages.txt` con `ffmpeg` per i codec
-        3. Usa file audio piccoli per i test iniziali
+        **Ottimizzazioni per video lunghi:**
+        - Cleanup memoria ogni 50 frame (vs 20 per video corti)
+        - ETA dinamico mostrato durante elaborazione
+        - Timeout FFmpeg adattivo (2-10 minuti)
+        - Controllo memoria critica ogni N frame
+        
+        **Requirements per 4 minuti:**
+        ```
+        streamlit
+        numpy
+        opencv-python-headless
+        librosa
+        soundfile
+        pydub  
+        psutil
+        ```
         """)
