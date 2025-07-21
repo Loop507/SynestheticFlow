@@ -2,9 +2,7 @@ streamlit
 numpy
 opencv-python-headless
 Pillow
-pydub
 librosa
-imageio[ffmpeg]
+imageio
 scipy
-streamlit
 soundfile
