@@ -1,324 +1,345 @@
 import streamlit as st
 import numpy as np
 import cv2
-from PIL import Image
-import imageio
 import os
 import tempfile
-# Rimosso: from pydub import AudioSegment
+from pydub import AudioSegment
 import librosa
-import soundfile as sf # Assicurati che soundfile sia installato in requirements.txt
-import subprocess # Mantenuto per compatibilità, ma le chiamate a ffmpeg saranno rimosse
-import math
+import soundfile as sf
+import subprocess
+import gc
+import shutil
+import io
+from typing import Tuple, Optional
+
+# Configurazione memoria ridotta
+os.environ['LIBROSA_CACHE_DIR'] = '/tmp/librosa_cache'
+os.environ['NUMBA_CACHE_DIR'] = '/tmp/numba_cache'
 
 st.set_page_config(page_title="🎶 SynestheticFlow", layout="wide")
 
-st.markdown(
-    """
-    # 🎶 SynestheticFlow <span style="font-size:0.5em;">by Loop507</span>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown("# 🎶 SynestheticFlow <span style='font-size:0.5em;'>by Loop507</span>", unsafe_allow_html=True)
+st.write("Visualizzazioni musicali ottimizzate per 200MB RAM")
 
-st.write("Crea visualizzazioni dinamiche e pattern reattivi alla tua musica!")
+# --- FUNZIONI OTTIMIZZATE PER MEMORIA MINIMA ---
 
-# --- FUNZIONI DI DISEGNO DEI PATTERN ---
-
-def draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames, is_beat_in_frame, bass_energy, mid_energy, treble_energy):
-    """Disegna un pattern di cerchi concentrici che reagisce al volume, con dinamiche potenziate."""
-    center_x, center_y = frame_width // 2, frame_height // 2
-
-    base_radius = min(frame_width, frame_height) // 3
-    num_circles = int(5 + normalized_rms * visual_complexity * 3)
-
-    # Aggiungi una reazione al beat: aumenta temporaneamente la dimensione o lo spessore
-    beat_effect_scale = 1.0 + (1.5 * is_beat_in_frame) # Se è beat, scala di 1.5x
-    
-    # Colore influenzato da RMS e frequenze
-    r_color = int(255 * (normalized_rms + treble_energy) / 2)
-    g_color = int(255 * (normalized_rms + mid_energy) / 2)
-    b_color = int(255 * (normalized_rms + bass_energy) / 2)
-
-    for j in range(num_circles):
-        radius = int(base_radius * (0.8 + normalized_rms * 0.9) * (j / num_circles + 0.1) * beat_effect_scale)
-        
-        # Colore influenzato dalla posizione del cerchio e dalle frequenze
-        color_val = int(255 * (normalized_rms + j / num_circles) / 1.5)
-        
-        # Combinazione di colori basata sulle energie delle frequenze
-        circle_color = (
-            min(255, r_color + int(treble_energy * 100)), 
-            min(255, g_color + int(mid_energy * 100)), 
-            min(255, b_color + int(bass_energy * 100))
-        )
-        cv2.circle(frame_img, (center_x, center_y), radius, circle_color, line_thickness)
-    return frame_img
-
-def draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, i, total_frames, is_beat_in_frame, bass_energy, mid_energy, treble_energy):
-    """
-    Genera un pattern fluido e organico basato su gradienti di colore generati matematicamente,
-    simulando le immagini di riferimento. Opera a livello di pixel.
-    Ora reagisce a BPM, Volume e Frequenze.
-    """
-    y_coords, x_coords = np.indices((frame_height, frame_width))
-
-    x_norm = (x_coords / frame_width) * 2 - 1
-    y_norm = (y_coords / frame_height) * 2 - 1
-
-    # Componente temporale per l'animazione, influenzata dal volume e dal beat
-    t = i * 0.01 + normalized_rms * 0.5 
-    
-    # Aggiungi un impulso visivo in corrispondenza del beat
-    beat_impulse = 1.0 + (2.0 * is_beat_in_frame) # Forte impatto sul beat
-
-    # --- Generazione del campo d'onda complesso ---
-    # Le onde sono influenzate dalla complessità visiva, dal volume e dalle frequenze
-    
-    # Onda di base che si muove in diagonale, influenzata dal beat e dai medi
-    wave_field1 = np.sin(x_norm * (10 * beat_impulse) + y_norm * 8 + t * 5 + normalized_rms * 3 + mid_energy * 5) * 0.5
-    
-    # Onda radiale che pulsa dal centro, influenzata dal beat e dai bassi
-    r = np.sqrt(x_norm**2 + y_norm**2)
-    angle = np.arctan2(y_norm, x_norm)
-    wave_field2 = np.cos(r * (12 + visual_complexity * beat_impulse) + t * (4 + normalized_rms * 2) + bass_energy * 8) * 0.6
-    
-    # Onda che crea un effetto vortice/spirale, influenzata dagli alti
-    swirl_strength = 0.5 + normalized_rms * 0.3 + treble_energy * 0.2
-    swirl_x = x_norm * np.cos(angle + t * 0.5 * swirl_strength) - y_norm * np.sin(angle + t * 0.5 * swirl_strength)
-    swirl_y = x_norm * np.sin(angle + t * 0.5 * swirl_strength) + y_norm * np.cos(angle + t * 0.5 * swirl_strength)
-    wave_field3 = np.sin(swirl_x * (8 + visual_complexity) + swirl_y * (7 + visual_complexity) + t * 6 + treble_energy * 7) * 0.7
-
-    # Onda aggiuntiva per maggiore complessità e intersezioni, influenzata da tutte le frequenze
-    wave_field4 = np.cos(x_norm * (visual_complexity * 2) + t * 2 + np.sin(y_norm * 5) + (bass_energy + mid_energy + treble_energy) * 3) * 0.4
-
-    # Combina tutti i campi d'onda. L'intensità complessiva è influenzata dal volume e dal beat
-    total_wave_value = (wave_field1 + wave_field2 + wave_field3 + wave_field4) * (0.8 + normalized_rms * 0.7 + is_beat_in_frame * 0.5)
-
-    normalized_value = np.clip(total_wave_value, -3, 3)
-    normalized_value = (normalized_value + 3) / 6
-
-    # --- Calcolo e casting esplicito a np.uint8 per tutti i canali HSV ---
-    # I colori sono influenzati dalle energie delle frequenze
-    
-    # Tonalità (Hue): Varia con l'onda, il tempo, il volume e le frequenze
-    hue_float = (normalized_value * 200 + t * 30 + normalized_rms * 60 + bass_energy * 50 + mid_energy * 30 + treble_energy * 70) % 180
-    
-    # Saturazione: Alta per colori vivaci, con influenza di volume e frequenze
-    saturation_float = 200 + (normalized_rms * 55) + (bass_energy + mid_energy + treble_energy) * 30
-    
-    # Valore (Brightness): Pulsazione più intensa con il volume e il beat, variazione basata sull'onda
-    value_float = (normalized_value * 180 + normalized_rms * 70 + is_beat_in_frame * 80)
-    
-    # CLIPPAGGIO E CASTING A UINT8: Essenziale per OpenCV
-    hue_uint8 = np.clip(hue_float, 0, 179).astype(np.uint8) # Hue range: 0-179
-    saturation_uint8 = np.clip(saturation_float, 0, 255).astype(np.uint8) # Saturation range: 0-255
-    value_uint8 = np.clip(value_float, 0, 255).astype(np.uint8) # Value range: 0-255
-
-    hsv_image = np.stack([hue_uint8, np.full_like(hue_uint8, saturation_uint8), value_uint8], axis=-1)
-    
-    bgr_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2BGR)
-
-    frame_img[:] = bgr_image
-
-    return frame_img
-
-# --- UI per Caricamento Audio e Controlli (Spostati nella Sidebar) ---
-
-# Modificato per accettare solo WAV, FLAC, OGG dato che ffmpeg non sarà installato
-uploaded_audio = st.file_uploader("Carica un file audio (WAV, FLAC, OGG)", type=["wav", "flac", "ogg"])
-
-st.sidebar.subheader("Impostazioni Generazione Visual")
-num_frames_per_second = st.sidebar.slider("Frame al secondo (FPS)", 15, 60, 24)
-visual_complexity = st.sidebar.slider("Complessità visiva", 1, 10, 5)
-line_thickness = st.sidebar.slider("Spessore linee (per Mandala Semplice)", 1, 5, 2)
-pattern_type = st.sidebar.selectbox("Tipo di Pattern", ["Mandala Semplice (Cerchi)", "Flusso Ondulato a Gradiente"])
-
-
-generate_button = st.button("✨ Genera Visual e Video")
-
-if generate_button and uploaded_audio is not None:
-    st.info("Inizio elaborazione... potrebbe volerci del tempo.")
-
-    audio_path = None # Inizializza audio_path a None per il blocco finally
-
+@st.cache_data
+def get_audio_info(audio_bytes: bytes) -> Tuple[float, int]:
+    """Estrae informazioni base dall'audio senza caricarlo tutto."""
     try:
-        # Crea un file temporaneo per salvare l'audio caricato.
-        # soundfile e librosa preferiscono lavorare con percorsi di file.
-        suffix = os.path.splitext(uploaded_audio.name)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_audio_file:
-            tmp_audio_file.write(uploaded_audio.read())
-            audio_path = tmp_audio_file.name
+        audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
+        return len(audio) / 1000.0, audio.frame_rate
+    except:
+        return 0.0, 22050
 
-        # Ora leggi l'audio con soundfile
-        y, sr = sf.read(audio_path)
-        # Converti i dati a float32, che è il formato preferito da librosa
-        y = y.astype(np.float32)
+def draw_minimal_mandala(frame_img: np.ndarray, width: int, height: int, 
+                        rms: float, complexity: int, thickness: int, 
+                        beat: bool, freq_data: Tuple[float, float, float]) -> np.ndarray:
+    """Mandala ultra-semplificato."""
+    cx, cy = width // 2, height // 2
+    base_r = min(width, height) // 4
+    circles = min(3 + int(rms * complexity), 8)  # Max 8 cerchi
+    
+    beat_scale = 1.3 if beat else 1.0
+    bass, mid, treble = freq_data
+    
+    colors = [
+        (int(255 * treble), int(128 * mid), int(255 * bass)),
+        (int(128 * bass), int(255 * treble), int(128 * mid)),
+        (int(255 * mid), int(255 * bass), int(128 * treble))
+    ]
+    
+    for i in range(circles):
+        r = int(base_r * (0.3 + 0.7 * i / circles) * beat_scale * (1 + rms))
+        color = colors[i % 3]
+        cv2.circle(frame_img, (cx, cy), r, color, thickness)
+    
+    return frame_img
 
-        audio_duration_sec = len(y) / sr
-        st.write(f"Audio caricato: **{uploaded_audio.name}**")
-        st.write(f"Durata audio: **{audio_duration_sec:.2f}** secondi")
+def draw_minimal_waves(frame_img: np.ndarray, width: int, height: int,
+                      rms: float, complexity: int, frame_idx: int,
+                      beat: bool, freq_data: Tuple[float, float, float]) -> np.ndarray:
+    """Pattern ondulato ultra-semplificato."""
+    # Riduci risoluzione drasticamente per calcoli
+    calc_w, calc_h = width // 4, height // 4
+    
+    # Griglia semplificata
+    x = np.linspace(-1, 1, calc_w, dtype=np.float16)  # float16 per memoria
+    y = np.linspace(-1, 1, calc_h, dtype=np.float16)
+    X, Y = np.meshgrid(x, y)
+    
+    t = frame_idx * 0.1
+    beat_mult = 1.5 if beat else 1.0
+    bass, mid, treble = freq_data
+    
+    # Una sola onda semplice
+    wave = np.sin(X * 5 * beat_mult + t + bass * 3) * np.cos(Y * 3 + mid * 2)
+    wave = (wave + 1) * 127.5  # Normalizza a 0-255
+    
+    # Converti a RGB semplice
+    hue = (wave + treble * 50) % 180
+    rgb_small = np.zeros((calc_h, calc_w, 3), dtype=np.uint8)
+    rgb_small[:,:,0] = np.clip(hue + bass * 100, 0, 255)
+    rgb_small[:,:,1] = np.clip(wave + mid * 100, 0, 255) 
+    rgb_small[:,:,2] = np.clip(255 - hue + treble * 100, 0, 255)
+    
+    # Ridimensiona velocemente
+    rgb_full = cv2.resize(rgb_small, (width, height), interpolation=cv2.INTER_NEAREST)
+    frame_img[:] = rgb_full
+    
+    return frame_img
 
-        total_frames = int(audio_duration_sec * num_frames_per_second)
-        st.write(f"Genererò circa **{total_frames}** frame per il video.")
-
-        all_visual_frames = []
+def analyze_audio_minimal(audio_path: str, max_duration: int = 30) -> Tuple[np.ndarray, np.ndarray, float]:
+    """Analisi audio super-ridotta."""
+    try:
+        # Carica solo quello che serve con qualità ridotta
+        y, sr = librosa.load(audio_path, sr=11025, mono=True, duration=max_duration)  # SR ridotto
         
-        frame_width, frame_height = 1280, 720
+        # BPM veloce su campione piccolo
+        y_beat = y[::8]  # Campiona ogni 8
+        tempo, beats = librosa.beat.beat_track(y=y_beat, sr=sr//8, trim=False)
+        beat_times = beats * 8 / sr  # Correggi timing
         
-        progress_text = st.empty()
+        return y, beat_times, tempo
+    except Exception as e:
+        st.warning(f"Analisi audio semplificata: {e}")
+        return np.zeros(max_duration * 11025), np.array([]), 120.0
+
+def process_frame_data(audio_chunk: np.ndarray, sr: int = 11025) -> Tuple[float, Tuple[float, float, float]]:
+    """Analisi frame ultra-veloce."""
+    if len(audio_chunk) == 0:
+        return 0.0, (0.0, 0.0, 0.0)
+    
+    # RMS veloce
+    rms = np.sqrt(np.mean(audio_chunk**2))
+    rms_norm = min(1.0, rms * 10)  # Amplifica per visibilità
+    
+    # Frequenze super-semplificate (solo su 64 campioni max)
+    if len(audio_chunk) > 32:
+        chunk = audio_chunk[:64] if len(audio_chunk) > 64 else audio_chunk
+        fft = np.fft.fft(chunk)
+        mag = np.abs(fft[:len(chunk)//2])
+        
+        # Dividi in 3 bande fisse
+        third = len(mag) // 3
+        bass = np.mean(mag[:third]) if third > 0 else 0
+        mid = np.mean(mag[third:2*third]) if third > 0 else 0
+        treble = np.mean(mag[2*third:]) if third > 0 else 0
+        
+        # Normalizza veloce
+        max_mag = max(bass, mid, treble, 1e-6)
+        bass = min(1.0, bass / max_mag)
+        mid = min(1.0, mid / max_mag) 
+        treble = min(1.0, treble / max_mag)
+    else:
+        bass = mid = treble = 0.0
+    
+    return rms_norm, (bass, mid, treble)
+
+def check_ffmpeg() -> bool:
+    """Verifica FFmpeg."""
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
+        return result.returncode == 0
+    except:
+        return False
+
+# --- UI MINIMALISTA ---
+
+uploaded_audio = st.file_uploader("🎵 Audio (MP3/WAV, max 30sec consigliati)", type=["mp3", "wav"])
+
+with st.sidebar:
+    st.header("⚙️ Impostazioni")
+    
+    # Preset rapidi per memoria
+    preset = st.selectbox("📊 Preset qualità", [
+        "🚀 Ultra-Fast (360p, 15fps)",
+        "⚡ Fast (480p, 20fps)", 
+        "🎯 Balanced (720p, 15fps)"
+    ])
+    
+    if "Ultra-Fast" in preset:
+        width, height, fps = 640, 360, 15
+    elif "Fast" in preset:
+        width, height, fps = 854, 480, 20
+    else:
+        width, height, fps = 1280, 720, 15
+    
+    max_duration = st.slider("⏱️ Durata max (sec)", 5, 30, 20)
+    pattern = st.radio("🎨 Pattern", ["Mandala", "Onde"])
+    complexity = st.slider("🔧 Complessità", 1, 5, 3)
+    thickness = st.slider("📏 Spessore", 1, 3, 2) if pattern == "Mandala" else 1
+
+# Mostra info memoria
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("🎬 Risoluzione", f"{width}x{height}")
+with col2:
+    st.metric("⚡ FPS", fps)
+with col3:
+    if uploaded_audio:
+        duration, _ = get_audio_info(uploaded_audio.read())
+        uploaded_audio.seek(0)  # Reset per uso successivo
+        st.metric("⏱️ Durata", f"{min(duration, max_duration):.1f}s")
+    else:
+        st.metric("⏱️ Durata", "0s")
+
+if st.button("🚀 **GENERA VIDEO**", type="primary"):
+    if not uploaded_audio:
+        st.error("⚠️ Carica un file audio!")
+        st.stop()
+    
+    if not check_ffmpeg():
+        st.error("❌ FFmpeg richiesto ma non disponibile!")
+        st.info("💡 Su Streamlit Cloud: aggiungi 'ffmpeg' in packages.txt")
+        st.stop()
+    
+    # Cleanup memoria iniziale
+    gc.collect()
+    
+    progress_container = st.container()
+    with progress_container:
         progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        # --- Pre-calcolo BPM e Beat ---
-        st.info("Analisi del battito (BPM)...")
-        # librosa.beat.beat_track può funzionare con i dati direttamente da soundfile
-        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, start_bpm=100, units='frames')
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-        st.write(f"BPM stimato: **{tempo:.2f}**")
-        st.write(f"Trovati **{len(beat_times)}** battiti.")
-
-        samples_per_frame = int(sr / num_frames_per_second)
+    try:
+        status_text.text("📁 Preparazione file...")
         
-        # Frequenze per le bande (esempi, possono essere ottimizzate)
-        bass_hz_end = 250
-        mid_hz_end = 4000
-
+        # File temporanei
+        temp_dir = tempfile.mkdtemp()
+        audio_path = os.path.join(temp_dir, "audio.wav")
+        video_path = os.path.join(temp_dir, "video.mp4")
+        final_path = os.path.join(temp_dir, "final.mp4")
+        
+        # Salva audio
+        with open(audio_path, "wb") as f:
+            f.write(uploaded_audio.read())
+        
+        status_text.text("🎵 Analisi audio veloce...")
+        
+        # Analisi audio ridotta
+        audio_data, beat_times, tempo = analyze_audio_minimal(audio_path, max_duration)
+        actual_duration = min(len(audio_data) / 11025, max_duration)
+        total_frames = int(actual_duration * fps)
+        samples_per_frame = len(audio_data) // total_frames
+        
+        st.info(f"🎼 BPM: {tempo:.0f} | ⏱️ {actual_duration:.1f}s | 🎬 {total_frames} frame")
+        
+        status_text.text("🎬 Creazione video...")
+        
+        # Video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+        
+        if not out.isOpened():
+            st.error("❌ Impossibile creare video writer")
+            st.stop()
+        
+        # Generazione frame ottimizzata
         for i in range(total_frames):
-            start_sample = i * samples_per_frame
-            end_sample = min((i + 1) * samples_per_frame, len(y))
+            # Estrai chunk audio
+            start_idx = i * samples_per_frame
+            end_idx = min(start_idx + samples_per_frame, len(audio_data))
+            chunk = audio_data[start_idx:end_idx]
             
-            if start_sample >= len(y):
-                break
-
-            audio_chunk = y[start_sample:end_sample]
-
-            # --- Calcolo RMS (Volume) ---
-            rms_energy = np.sqrt(np.mean(audio_chunk**2))
-            normalized_rms = np.log10(rms_energy + 1e-10) / np.log10(1.0 + 1e-10) 
-            normalized_rms = np.clip(normalized_rms, 0, 1)
-
-            # --- Rilevamento Beat nel Frame Corrente ---
-            current_frame_time = i / num_frames_per_second
-            next_frame_time = (i + 1) / num_frames_per_second
-            is_beat_in_frame = False
-            for bt in beat_times:
-                if current_frame_time <= bt < next_frame_time:
-                    is_beat_in_frame = True
-                    break
-
-            # --- Analisi Frequenze (Bassi, Medi, Alti) ---
-            if len(audio_chunk) > 0:
-                fft_output = np.fft.fft(audio_chunk)
-                magnitude = np.abs(fft_output[:len(audio_chunk) // 2])
-                frequencies = np.linspace(0, sr / 2, len(magnitude))
-
-                bass_idx = np.where(frequencies < bass_hz_end)
-                mid_idx = np.where((frequencies >= bass_hz_end) & (frequencies < mid_hz_end))
-                treble_idx = np.where(frequencies >= mid_hz_end)
-
-                bass_energy = np.mean(magnitude[bass_idx]) if len(bass_idx[0]) > 0 else 0
-                mid_energy = np.mean(magnitude[mid_idx]) if len(mid_idx[0]) > 0 else 0
-                treble_energy = np.mean(magnitude[treble_idx]) if len(treble_idx[0]) > 0 else 0
-                
-                max_mag = np.max(magnitude) if len(magnitude) > 0 else 1
-                bass_energy = np.clip(bass_energy / (max_mag + 1e-10) * 2, 0, 1)
-                mid_energy = np.clip(mid_energy / (max_mag + 1e-10) * 2, 0, 1)
-                treble_energy = np.clip(treble_energy / (max_mag + 1e-10) * 2, 0, 1)
+            # Analizza chunk
+            rms, freq_data = process_frame_data(chunk)
+            
+            # Rileva beat
+            frame_time = i / fps
+            beat_detected = np.any(np.abs(beat_times - frame_time) < (0.5 / fps))
+            
+            # Crea frame
+            frame = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            if pattern == "Mandala":
+                frame = draw_minimal_mandala(frame, width, height, rms, complexity, 
+                                           thickness, beat_detected, freq_data)
             else:
-                bass_energy, mid_energy, treble_energy = 0, 0, 0
-
-
-            frame_img = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
-
-            if pattern_type == "Mandala Semplice (Cerchi)":
-                frame_img = draw_simple_mandala(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, line_thickness, i, total_frames, is_beat_in_frame, bass_energy, mid_energy, treble_energy)
-            elif pattern_type == "Flusso Ondulato a Gradiente":
-                frame_img = draw_fluid_gradient_pattern(frame_img, frame_width, frame_height, normalized_rms, visual_complexity, i, total_frames, is_beat_in_frame, bass_energy, mid_energy, treble_energy)
+                frame = draw_minimal_waves(frame, width, height, rms, complexity, 
+                                         i, beat_detected, freq_data)
             
-            all_visual_frames.append(frame_img)
-            progress_bar.progress((i + 1) / total_frames)
-            progress_text.text(f"Generazione frame: {i+1}/{total_frames}")
-
-        progress_text.empty()
-
-        # Genera il video solo dalle immagini, senza audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_video_output:
-            video_filepath = tmp_video_output.name
-
-        writer = imageio.get_writer(video_filepath, fps=num_frames_per_second)
-        for frame in all_visual_frames:
-            writer.append_data(frame)
-        writer.close()
-
-        st.success("✅ Video visuale generato con successo (senza audio)!")
-
-        # Scarica il video generato (senza audio)
-        with open(video_filepath, "rb") as f:
+            out.write(frame)
+            
+            # Progresso e cleanup
+            if i % 10 == 0:  # Ogni 10 frame
+                progress_bar.progress((i + 1) / total_frames)
+                status_text.text(f"🎨 Frame {i+1}/{total_frames} ({((i+1)/total_frames*100):.1f}%)")
+                gc.collect()  # Forza pulizia memoria
+        
+        out.release()
+        progress_bar.progress(1.0)
+        status_text.text("🔧 Unione audio-video...")
+        
+        # Combina con FFmpeg
+        cmd = [
+            'ffmpeg', '-y', '-loglevel', 'error',
+            '-i', video_path,
+            '-i', audio_path,
+            '-t', str(actual_duration),
+            '-c:v', 'libx264', '-preset', 'ultrafast',
+            '-c:a', 'aac', '-b:a', '128k',
+            final_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        
+        if result.returncode == 0 and os.path.exists(final_path):
+            status_text.text("✅ Video completato!")
+            
+            # Leggi e offri download
+            with open(final_path, 'rb') as f:
+                video_bytes = f.read()
+            
+            file_size_mb = len(video_bytes) / (1024 * 1024)
+            st.success(f"🎉 **Video generato!** ({file_size_mb:.1f} MB)")
+            
+            # Download button
             st.download_button(
-                label="⬇️ Scarica il tuo Video Visual (senza audio)",
-                data=f,
-                file_name="synesthetic_flow_visual.mp4",
+                label="⬇️ **SCARICA VIDEO**",
+                data=video_bytes,
+                file_name=f"synesthetic_{uploaded_audio.name.split('.')[0]}.mp4",
                 mime="video/mp4"
             )
-
-        # --- SEZIONE RIMOSSA: COMBINAZIONE VIDEO/AUDIO CON FFMPEG ---
-        # La sezione seguente che chiamava 'ffmpeg' tramite subprocess è stata rimossa.
-        # Questo perché ffmpeg non sarà installato su Streamlit Community Cloud,
-        # causando il fallimento del deploy.
-        # Se hai ASSOLUTAMENTE bisogno di unire audio e video in Python, dovrai:
-        # 1. Utilizzare un'alternativa che non dipenda da ffmpeg (difficile per la fusione video/audio).
-        # 2. Utilizzare un servizio di hosting diverso da Streamlit Community Cloud
-        #    che permetta l'installazione di ffmpeg a livello di sistema.
-        #
-        # Esempio del codice rimosso (NON INSERIRLO!):
-        # final_video_filepath = video_filepath.replace(".mp4", "_final.mp4")
-        # command = [
-        #     'ffmpeg',
-        #     '-i', video_filepath,
-        #     '-i', audio_path,
-        #     '-c:v', 'copy',
-        #     '-c:a', 'aac',
-        #     '-shortest',
-        #     '-y',
-        #     final_video_filepath
-        # ]
-        # try:
-        #     st.write("Combinazione video e audio...")
-        #     subprocess.run(command, check=True, capture_output=True, text=True)
-        #     st.success("✅ Video con audio generato con successo!")
-        #     with open(final_video_filepath, "rb") as f:
-        #         st.download_button(
-        #             label="⬇️ Scarica il tuo Video Visual",
-        #             data=f,
-        #             file_name="synesthetic_flow_visual.mp4",
-        #             mime="video/mp4"
-        #         )
-        # except subprocess.CalledProcessError as e:
-        #     st.error(f"Errore durante la combinazione di video/audio (FFmpeg): {e.stderr}")
-        #     st.info("FFmpeg non è disponibile. La combinazione video/audio non è supportata in questo ambiente.")
-        # except FileNotFoundError:
-        #     st.error("FFmpeg non trovato. La combinazione video/audio non è supportata in questo ambiente.")
-        # ----------------------------------------------------------------------------------
-
+            
+        else:
+            st.error(f"❌ Errore FFmpeg: {result.stderr}")
+            
     except Exception as e:
-        st.error(f"Si è verificato un errore generale nell'elaborazione: {e}")
-        st.error(f"Dettagli: {str(e)}")
-        if "unsupported format" in str(e).lower() and uploaded_audio:
-            st.error(f"Il formato del file audio caricato ({uploaded_audio.type}) potrebbe non essere supportato. Prova un WAV, FLAC o OGG standard.")
-        elif "Could not find a backend" in str(e) and "imageio" in str(e).lower():
-            st.error("Sembra che il backend per imageio non sia installato correttamente. Controlla `requirements.txt` (`imageio`).")
-        elif "Cannot install on Python version" in str(e): # Questo errore è relativo a Numba/llvmlite
-            st.error("Si è verificato un problema con la versione di Python richiesta da alcune librerie (probabilmente Numba/llvmlite, dipendenze di librosa).")
-            st.info("Prova ad aggiungere `python_version = \"3.9\"` nel tuo `.streamlit/config.toml` o a bloccare le versioni di `numba` e `llvmlite` in `requirements.txt`.")
-
-
+        st.error(f"❌ Errore: {str(e)}")
+        if "memory" in str(e).lower():
+            st.info("💡 Riduci durata o usa preset Ultra-Fast")
+            
     finally:
-        # Pulizia dei file temporanei
-        if audio_path and os.path.exists(audio_path):
-            os.remove(audio_path)
-        if 'video_filepath' in locals() and os.path.exists(video_filepath):
-            os.remove(video_filepath)
-        # final_video_filepath non dovrebbe più essere creato se ffmpeg non è chiamato
-
+        # Cleanup finale
+        try:
+            if 'temp_dir' in locals():
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except:
+            pass
+        gc.collect()
 
 else:
-    st.info("Carica un file audio (WAV, FLAC, OGG) e premi 'Genera Visual e Video' per creare la tua visualizzazione!")
+    st.info("📝 **Consigli per 200MB RAM:**")
+    st.write("""
+    - ✅ **Max 20-30 secondi** di audio
+    - ✅ **Preset Ultra-Fast** per test
+    - ✅ **Chiudi altre app** durante generazione  
+    - ✅ **File MP3 < 5MB** consigliati
+    """)
+    
+    with st.expander("🔧 Ottimizzazioni implementate"):
+        st.write("""
+        **Memoria ridotta:**
+        - Float16 per calcoli matematici
+        - Risoluzione calcoli divisa per 4
+        - Sample rate audio ridotto (11kHz)
+        - Max 64 campioni per analisi FFT
+        - Cleanup automatico ogni 10 frame
+        
+        **Performance:**
+        - FFmpeg preset ultrafast
+        - Codec mp4v per compatibilità
+        - Timeout operazioni (60s max)
+        - Cache librosa in /tmp
+        """)
