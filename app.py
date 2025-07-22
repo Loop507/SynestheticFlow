@@ -159,12 +159,12 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
     for y in range(height):
         for x in range(width):
             # Coordinate complesse con zoom e movimento
-            c_real = (float(x) - width/2) / (zoom * width/4) + move_x
-            c_imag = (float(y) - height/2) / (zoom * height/4) + move_y
+            c_real = np.float64((float(x) - width/2) / (zoom * width/4) + move_x) # Cast esplicito
+            c_imag = np.float64((float(y) - height/2) / (zoom * height/4) + move_y) # Cast esplicito
 
             # Aggiunta influenza audio - modulazione sottile
-            c_real += audio_influence * 0.005 * np.sin(float(x) * 0.001)
-            c_imag += audio_influence * 0.005 * np.cos(float(y) * 0.001)
+            c_real += np.float64(audio_influence * 0.005 * np.sin(float(x) * 0.001)) # Cast esplicito
+            c_imag += np.float64(audio_influence * 0.005 * np.cos(float(y) * 0.001)) # Cast esplicito
 
             # Inizializza esplicitamente z_real e z_imag come np.float64 per Numba
             z_real = np.float64(0.0)
@@ -198,13 +198,13 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
     fractal = np.zeros((height, width, 3), dtype=np.uint8)
 
     # Modifica i parametri C in base all'audio
-    c_real = c_real_base + audio_mod * 0.05
-    c_imag = c_imag_base + audio_mod * 0.07
+    c_real = np.float64(c_real_base + audio_mod * 0.05) # Cast esplicito
+    c_imag = np.float64(c_imag_base + audio_mod * 0.07) # Cast esplicito
 
     for y in range(height):
         for x in range(width):
-            z_real = (float(x) - width/2) / (zoom * width/4)
-            z_imag = (float(y) - height/2) / (zoom * width/4)
+            z_real = np.float64((float(x) - width/2) / (zoom * width/4)) # Cast esplicito
+            z_imag = np.float64((float(y) - height/2) / (zoom * width/4)) # Cast esplicito
 
             iteration = 0
             while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
@@ -233,14 +233,15 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
 
     for y in range(height):
         for x in range(width):
-            c_real = (float(x) - width/2) / (zoom * width/4) + move_x
-            c_imag = (float(y) - height/2) / (zoom * height/4) + move_y
+            c_real = np.float64((float(x) - width/2) / (zoom * width/4) + move_x) # Cast esplicito
+            c_imag = np.float64((float(y) - height/2) / (zoom * height/4) + move_y) # Cast esplicito
 
             # Influenza audio
-            c_real += audio_influence * 0.003 * np.sin(float(x) * 0.002 + float(y) * 0.001)
-            c_imag += audio_influence * 0.003 * np.cos(float(x) * 0.001 + float(y) * 0.002)
+            c_real += np.float64(audio_influence * 0.003 * np.sin(float(x) * 0.002 + float(y) * 0.001)) # Cast esplicito
+            c_imag += np.float64(audio_influence * 0.003 * np.cos(float(x) * 0.001 + float(y) * 0.002)) # Cast esplicito
 
-            z_real, z_imag = 0.0, 0.0
+            z_real = np.float64(0.0) # Cast esplicito
+            z_imag = np.float64(0.0) # Cast esplicito
             iteration = 0
 
             while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
@@ -380,7 +381,7 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     base_audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
     audio_influence = base_audio_influence * (1.0 + beat_intensity * 0.5)
     
-    fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
+    fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, float(audio_influence)) # Cast esplicito
     
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
@@ -424,7 +425,7 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     base_audio_mod = (rms * 1.5 + (low_freq * 0.5 + mid_freq * 0.8 + high_freq * 0.2)) * movement_scale_factor
     audio_mod = base_audio_mod * (1.0 + beat_intensity * 0.6)
     
-    fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
+    fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, float(audio_mod)) # Cast esplicito
     
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
@@ -457,7 +458,7 @@ def draw_burning_ship_fractal_bpm_sync(frame_img, width, height, rms, current_ti
     
     audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor * (1.0 + beat_intensity * 0.4)
     
-    fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
+    fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, float(audio_influence)) # Cast esplicito
     
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
@@ -753,7 +754,7 @@ with st.expander("🌌 Informazioni Frattali"):
 
     - **Mandelbrot Set**: Il frattale più famoso, genera infinite spirali e forme organiche.
     - **Julia Set**: Forme fluide e dinamiche che cambiano costantemente.
-    - **Burning Ship**: Crea strutture che ricordano navi e paesaggi bruciati.
+    - **Burning Ship**: Forme che ricordano navi e paesaggi bruciati.
     - **Sierpinski Carpet**: Pattern geometrici auto-simili.
 
     **🎵 Sincronizzazione BPM Avanzata:**
