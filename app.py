@@ -34,12 +34,17 @@ def get_optimal_settings(duration, width, height):
     estimated_size = (width * height * fps * duration) / (1024 * 1024)  # rough estimate
     return width, height, fps, int(estimated_size)
 
+def interpolate_parameters(start_params, end_params, factor):
+    """Interpolazione lineare tra due set di parametri."""
+    return start_params + (end_params - start_params) * factor
+
 def analyze_frequency_bands(freq_data):
     """Analizza le bande di frequenza (basse, medie, acute)"""
     if len(freq_data) == 0:
         return 0, 0, 0
 
-    freq_data_norm = freq_data / (np.max(freq_data) + 1e-6)
+    # Normalizza i dati di frequenza per evitare valori eccessivi
+    freq_data_norm = freq_data / (np.max(freq_data) + 1e-6) # Aggiungi epsilon per evitare divisione per zero
 
     total_bins = len(freq_data_norm)
     low_end = total_bins // 3
@@ -56,10 +61,6 @@ def process_frame_data(audio_chunk):
     windowed_audio_chunk = audio_chunk * np.hanning(len(audio_chunk))
     fft_data = np.abs(np.fft.fft(windowed_audio_chunk))
     return (*analyze_frequency_bands(fft_data), rms)
-
-def interpolate_parameters(start_params, end_params, factor):
-    """Interpolazione lineare tra due set di parametri."""
-    return start_params + (end_params - start_params) * factor
 
 def generate_fractal_video(audio_path, width, height, fractal_type, sensitivity):
     y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
