@@ -8,6 +8,7 @@ import os
 import subprocess
 from numba import jit
 import random
+import math # Importato il modulo math
 
 # --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
@@ -81,8 +82,9 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Aggiunta influenza audio - modulazione sottile
-            c_real += audio_influence * 0.005 * np.sin(x * 0.001)
-            c_imag += audio_influence * 0.005 * np.cos(y * 0.001)
+            # Sostituito np.sin con math.sin e np.cos con math.cos
+            c_real += audio_influence * 0.005 * math.sin(x * 0.001)
+            c_imag += audio_influence * 0.005 * math.cos(y * 0.001)
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
@@ -135,9 +137,10 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
             else:
                 t = float(iteration) / max_iter
                 # Variazioni di colore psichedeliche
-                b = int(255 * (np.sin(t * 10 + 0) * 0.5 + 0.5))
-                g = int(255 * (np.sin(t * 10 + 2 * np.pi / 3) * 0.5 + 0.5))
-                r = int(255 * (np.sin(t * 10 + 4 * np.pi / 3) * 0.5 + 0.5))
+                # Sostituito np.sin con math.sin
+                b = int(255 * (math.sin(t * 10 + 0) * 0.5 + 0.5))
+                g = int(255 * (math.sin(t * 10 + 2 * math.pi / 3) * 0.5 + 0.5))
+                r = int(255 * (math.sin(t * 10 + 4 * math.pi / 3) * 0.5 + 0.5))
                 fractal[y, x] = [b, g, r]
 
     return fractal
@@ -153,8 +156,9 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Influenza audio
-            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
-            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
+            # Sostituito np.sin con math.sin e np.cos con math.cos
+            c_real += audio_influence * 0.003 * math.sin(x * 0.002 + y * 0.001)
+            c_imag += audio_influence * 0.003 * math.cos(x * 0.001 + y * 0.002)
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
@@ -171,9 +175,10 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
                 fractal[y, x] = [0, 0, 0]
             else:
                 t = float(iteration) / max_iter
-                b = int(255 * (np.sin(t * 5 + 0) * 0.5 + 0.5))
-                g = int(255 * (np.sin(t * 5 + 1.5) * 0.5 + 0.5))
-                r = int(255 * (np.sin(t * 5 + 3) * 0.5 + 0.5))
+                # Sostituito np.sin con math.sin
+                b = int(255 * (math.sin(t * 5 + 0) * 0.5 + 0.5))
+                g = int(255 * (math.sin(t * 5 + 1.5) * 0.5 + 0.5))
+                r = int(255 * (math.sin(t * 5 + 3) * 0.5 + 0.5))
                 fractal[y, x] = [b, g, r]
 
     return fractal
@@ -304,6 +309,7 @@ def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data
 
     # Parametri Julia dinamici
     max_iter = max(50, min(150, int(70 + rms * 80 * movement_scale_factor * bpm_scaled)))
+    # Sostituito np.sin con math.sin e np.cos con math.cos
     c_real_base = -0.7 + np.sin(frame_idx * 0.015 * movement_scale_factor * bpm_scaled) * 0.2
     c_imag_base = 0.27015 + np.cos(frame_idx * 0.01 * movement_scale_factor * bpm_scaled) * 0.15
     zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + high_freq * 2.0 * movement_scale_factor
@@ -328,6 +334,7 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
 
     max_iter = max(40, min(120, int(60 + rms * 60 * movement_scale_factor * bpm_scaled)))
     zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + mid_freq * 2.0 * movement_scale_factor
+    # Sostituito np.sin con math.sin e np.cos con math.cos
     move_x = -1.8 + np.sin(frame_idx * 0.003 * movement_scale_factor * bpm_scaled) * 0.1
     move_y = -0.08 + np.cos(frame_idx * 0.005 * movement_scale_factor * bpm_scaled) * 0.05
     audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor * bpm_scaled
@@ -425,7 +432,7 @@ fractal_type = st.selectbox(
 # --- CONTROLLI MOVIMENTO EFFETTI ---
 st.subheader("⚙️ Intensità Movimento Effetti")
 movement_intensity = st.selectbox(
-    "Seleziona l'intensità del movimento degli effetti:",
+    "Sceleziona l'intensità del movimento degli effetti:",
     ["Soft", "Medium", "Hard"],
     index=1 # Default to Medium
 )
