@@ -281,7 +281,7 @@ def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     # Color flash sul beat
     if beat and color_settings['use_frequency_colors']:
-        flash_color_bgr = np.array(hex_to_bgr("#FFFFFF")) # Bianco o colore vibrante
+        flash_color_bgr = np.array(hex_to_bgr("#FFFFFF"), dtype=np.float64).reshape((1, 1, 3)) # Bianco o colore vibrante
         # Aumenta l'intensità del flash con l'RMS
         flash_intensity = np.clip(rms * 5.0, 0.2, 0.8) # Tra 20% e 80% di blending
         cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
@@ -322,7 +322,7 @@ def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data
 
     # Color flash sul beat
     if beat and color_settings['use_frequency_colors']:
-        flash_color_bgr = np.array(hex_to_bgr("#FFC0CB")) # Rosa chiaro o colore vivace
+        flash_color_bgr = np.array(hex_to_bgr("#FFC0CB"), dtype=np.float64).reshape((1, 1, 3)) # Rosa chiaro o colore vivace
         flash_intensity = np.clip(rms * 4.0, 0.2, 0.7)
         cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
 
@@ -362,7 +362,7 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
 
     # Color flash sul beat
     if beat and color_settings['use_frequency_colors']:
-        flash_color_bgr = np.array(hex_to_bgr("#FFD700")) # Oro o colore acceso
+        flash_color_bgr = np.array(hex_to_bgr("#FFD700"), dtype=np.float64).reshape((1, 1, 3)) # Oro o colore acceso
         flash_intensity = np.clip(rms * 4.5, 0.2, 0.8)
         cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
 
@@ -397,7 +397,7 @@ def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     # Color flash sul beat
     if beat and color_settings['use_frequency_colors']:
-        flash_color_bgr = np.array(hex_to_bgr("#9400D3")) # Viola profondo o colore contrastante
+        flash_color_bgr = np.array(hex_to_bgr("#9400D3"), dtype=np.float64).reshape((1, 1, 3)) # Viola profondo o colore contrastante
         flash_intensity = np.clip(rms * 3.5, 0.2, 0.7)
         cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
 
@@ -493,7 +493,7 @@ with col1:
 
 with col2:
     if use_frequency_colors:
-        st.markdown("**Colori Frequenze:**")
+        st.markdown("**Colore Frequenze:**")
         low_freq_color = st.color_picker("🔴 Frequenze Basse", value="#FF0066") # Rosa vivace
         mid_freq_color = st.color_picker("🟢 Frequenze Medie", value="#00FF88") # Verde acqua
         high_freq_color = st.color_picker("🔵 Frequenze Acute", value="#0066FF") # Blu elettrico
