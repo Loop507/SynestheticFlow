@@ -26,7 +26,7 @@ def prepare_audio_file(uploaded_file, temp_dir):
 
 def analyze_audio_minimal(audio_path):
     y, sr = librosa.load(audio_path, sr=11025)
-    tempo, beat_frames = librosa.beat.beat_beat_track(y=y, sr=sr)
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr) # CORREZIONE QUI
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     return y, beat_times, tempo, sr
 
@@ -600,7 +600,7 @@ with st.expander("🌌 Informazioni Frattali"):
 
     - **Mandelbrot Set**: Il frattale più famoso, genera infinite spirali e forme organiche.
     - **Julia Set**: Forme fluide e dinamiche che cambiano costantemente.
-    - **Burning Ship**: Crea strutture che ricordano navi e paesaggi bruciati.
+    - **Burning Ship**: Forme che ricordano navi e paesaggi bruciati.
     - **Sierpinski Carpet**: Pattern geometrici auto-simili.
 
     **🎵 Reattività Audio:**
