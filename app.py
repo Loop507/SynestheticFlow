@@ -4,6 +4,9 @@ import cv2
 import librosa
 import tempfile
 import os
+from pydub import AudioSegment
+from pydub.generators import WhiteNoise
+import psutil
 
 # Configurazioni formato video
 VIDEO_FORMATS = {
