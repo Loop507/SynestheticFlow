@@ -166,7 +166,9 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
             c_real += audio_influence * 0.005 * np.sin(float(x) * 0.001)
             c_imag += audio_influence * 0.005 * np.cos(float(y) * 0.001)
 
-            z_real, z_imag = 0.0, 0.0
+            # Inizializza esplicitamente z_real e z_imag come np.float64 per Numba
+            z_real = np.float64(0.0)
+            z_imag = np.float64(0.0)
             iteration = 0
 
             # Calcolo iterativo
