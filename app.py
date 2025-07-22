@@ -6,6 +6,7 @@ import tempfile
 import time
 import os
 import subprocess
+from numba import jit
 
 # --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
@@ -14,7 +15,142 @@ VIDEO_FORMATS = {
     "9:16 (Portrait) - 720x1280": (720, 1280)
 }
 
-# --- FUNZIONI DI SUPPORTO ---
+# --- FUNZIONI FRATTALI AVANZATE ---
+
+@jit(nopython=True)
+def mandelbrot_set(width, height, max_iter, zoom, move_x, move_y, audio_influence):
+    fractal = np.zeros((height, width, 3), dtype=np.uint8)
+    for y in range(height):
+        for x in range(width):
+            c_real = (x - width/2) / (zoom * width/4) + move_x
+            c_imag = (y - height/2) / (zoom * height/4) + move_y
+            c_real += audio_influence * 0.1 * np.sin(x * 0.01)
+            c_imag += audio_influence * 0.1 * np.cos(y * 0.01)
+            z_real, z_imag = 0, 0
+            iteration = 0
+            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4:
+                z_real_new = z_real*z_real - z_imag*z_imag + c_real
+                z_imag = 2*z_real*z_imag + c_imag
+                z_real = z_real_new
+                iteration += 1
+            if iteration == max_iter:
+                fractal[y, x] = [0, 0, 0]
+            else:
+                color_val = int(255 * iteration / max_iter)
+                fractal[y, x] = [color_val, color_val//2, 255 - color_val]
+    return fractal
+
+@jit(nopython=True) 
+def julia_set(width, height, max_iter, c_real, c_imag, zoom, audio_mod):
+    fractal = np.zeros((height, width, 3), dtype=np.uint8)
+    c_real_mod = c_real + audio_mod * 0.3
+    c_imag_mod = c_imag + audio_mod * 0.2
+    for y in range(height):
+        for x in range(width):
+            z_real = (x - width/2) / (zoom * width/4)
+            z_imag = (y - height/2) / (zoom * height/4)
+            iteration = 0
+            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4:
+                z_real_new = z_real*z_real - z_imag*z_imag + c_real_mod
+                z_imag = 2*z_real*z_imag + c_imag_mod
+                z_real = z_real_new
+                iteration += 1
+            if iteration == max_iter:
+                fractal[y, x] = [20, 20, 40]
+            else:
+                t = iteration / max_iter
+                fractal[y, x] = [
+                    int(255 * abs(np.sin(t * 6.28))),
+                    int(255 * abs(np.sin(t * 6.28 + 2.09))), 
+                    int(255 * abs(np.sin(t * 6.28 + 4.18)))
+                ]
+    return fractal
+
+def generate_burning_ship(width, height, max_iter, zoom, move_x, move_y, audio_influence):
+    fractal = np.zeros((height, width, 3), dtype=np.uint8)
+    for y in range(height):
+        for x in range(width):
+            c_real = (x - width/2) / (zoom * width/4) + move_x
+            c_imag = (y - height/2) / (zoom * height/4) + move_y
+            c_real += audio_influence * 0.05 * np.sin(x * 0.02 + y * 0.01)
+            c_imag += audio_influence * 0.05 * np.cos(x * 0.01 + y * 0.02)
+            z_real, z_imag = 0, 0
+            iteration = 0
+            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4:
+                z_real_new = z_real*z_real - z_imag*z_imag + c_real
+                z_imag = 2*abs(z_real)*abs(z_imag) + c_imag
+                z_real = z_real_new
+                iteration += 1
+            if iteration == max_iter:
+                fractal[y, x] = [0, 0, 0]
+            else:
+                t = iteration / max_iter
+                fractal[y, x] = [
+                    min(255, int(255 * t * 2)),
+                    min(255, int(255 * t * t * 3)),
+                    min(255, int(255 * np.sqrt(t) * 1.5))
+                ]
+    return fractal
+
+def generate_sierpinski_carpet(width, height, iterations, audio_scale):
+    size = min(width, height)
+    carpet = np.ones((size, size), dtype=np.uint8) * 255
+    iter_count = max(1, min(8, int(iterations + audio_scale * 3)))
+    def remove_squares(arr, level, x, y, size):
+        if level == 0 or size < 3:
+            return
+        third = size // 3
+        for i in range(third):
+            for j in range(third):
+                if x + third + i < arr.shape[0] and y + third + j < arr.shape[1]:
+                    arr[x + third + i, y + third + j] = 0
+        for i in range(3):
+            for j in range(3):
+                if i != 1 or j != 1:
+                    remove_squares(arr, level-1, x + i*third, y + j*third, third)
+    remove_squares(carpet, iter_count, 0, 0, size)
+    fractal = np.zeros((height, width, 3), dtype=np.uint8)
+    carpet_resized = cv2.resize(carpet, (width, height))
+    for c in range(3):
+        fractal[:, :, c] = carpet_resized
+    return fractal
+
+def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings):
+    if not color_settings['use_frequency_colors']:
+        return fractal
+    height, width = fractal.shape[:2]
+    colored_fractal = fractal.copy()
+    low_bgr = hex_to_bgr(color_settings['low_freq_color'])
+    mid_bgr = hex_to_bgr(color_settings['mid_freq_color']) 
+    high_bgr = hex_to_bgr(color_settings['high_freq_color'])
+    for y in range(height):
+        for x in range(width):
+            if np.sum(fractal[y, x]) > 0:
+                zone = (x // (width // 3)) + (y // (height // 3)) * 3
+                if zone % 3 == 0:
+                    intensity = min(1.0, low_freq * 300)
+                    colored_fractal[y, x] = [
+                        min(255, int(fractal[y, x][0] * intensity + low_bgr[0] * (1-intensity))),
+                        min(255, int(fractal[y, x][1] * intensity + low_bgr[1] * (1-intensity))),
+                        min(255, int(fractal[y, x][2] * intensity + low_bgr[2] * (1-intensity)))
+                    ]
+                elif zone % 3 == 1:
+                    intensity = min(1.0, mid_freq * 300)
+                    colored_fractal[y, x] = [
+                        min(255, int(fractal[y, x][0] * intensity + mid_bgr[0] * (1-intensity))),
+                        min(255, int(fractal[y, x][1] * intensity + mid_bgr[1] * (1-intensity))),
+                        min(255, int(fractal[y, x][2] * intensity + mid_bgr[2] * (1-intensity)))
+                    ]
+                else:
+                    intensity = min(1.0, high_freq * 300)
+                    colored_fractal[y, x] = [
+                        min(255, int(fractal[y, x][0] * intensity + high_bgr[0] * (1-intensity))),
+                        min(255, int(fractal[y, x][1] * intensity + high_bgr[1] * (1-intensity))),
+                        min(255, int(fractal[y, x][2] * intensity + high_bgr[2] * (1-intensity)))
+                    ]
+    return colored_fractal
+
+# --- FUNZIONI ORIGINALI MANTENUTE ---
 def prepare_audio_file(uploaded_file, temp_dir):
     audio_path = f"{temp_dir}/input_audio.wav"
     with open(audio_path, "wb") as f:
@@ -29,23 +165,18 @@ def analyze_audio_minimal(audio_path):
 
 def get_optimal_settings(duration, width, height):
     fps = 20
-    estimated_size = (width * height * fps * duration) / (1024 * 1024)  # rough estimate
+    estimated_size = (width * height * fps * duration) / (1024 * 1024)
     return width, height, fps, int(estimated_size)
 
 def analyze_frequency_bands(freq_data):
-    """Analizza le bande di frequenza (basse, medie, acute)"""
     if len(freq_data) == 0:
         return 0, 0, 0
-    
-    # Dividi lo spettro in 3 bande
     total_bins = len(freq_data)
     low_end = total_bins // 3
     mid_end = (total_bins * 2) // 3
-    
     low_freq = np.mean(freq_data[:low_end]) if low_end > 0 else 0
     mid_freq = np.mean(freq_data[low_end:mid_end]) if mid_end > low_end else 0
     high_freq = np.mean(freq_data[mid_end:]) if total_bins > mid_end else 0
-    
     return low_freq, mid_freq, high_freq
 
 def process_frame_data(audio_chunk):
@@ -54,291 +185,206 @@ def process_frame_data(audio_chunk):
     return rms, freq_data
 
 def hex_to_bgr(hex_color):
-    """Converte colore hex in formato BGR per OpenCV"""
     hex_color = hex_color.lstrip('#')
     rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-    return (rgb[2], rgb[1], rgb[0])  # BGR format
+    return (rgb[2], rgb[1], rgb[0])
 
-def get_frequency_colors(low_freq, mid_freq, high_freq, low_color, mid_color, high_color, intensity_multiplier=300):
-    """Calcola i colori basati sulle frequenze"""
-    low_bgr = hex_to_bgr(low_color)
-    mid_bgr = hex_to_bgr(mid_color)
-    high_bgr = hex_to_bgr(high_color)
-    
-    # Normalizza e applica intensità
-    low_intensity = min(255, int(low_freq * intensity_multiplier))
-    mid_intensity = min(255, int(mid_freq * intensity_multiplier))
-    high_intensity = min(255, int(high_freq * intensity_multiplier))
-    
-    # Mescola i colori basandosi sull'intensità delle frequenze
-    mixed_color = (
-        min(255, int((low_bgr[0] * low_intensity + mid_bgr[0] * mid_intensity + high_bgr[0] * high_intensity) / 255)),
-        min(255, int((low_bgr[1] * low_intensity + mid_bgr[1] * mid_intensity + high_bgr[1] * high_intensity) / 255)),
-        min(255, int((low_bgr[2] * low_intensity + mid_bgr[2] * mid_intensity + high_bgr[2] * high_intensity) / 255))
-    )
-    
-    return mixed_color, (low_bgr, mid_bgr, high_bgr), (low_intensity, mid_intensity, high_intensity)
+# --- NUOVE FUNZIONI FRATTALI PER IL PROCESSING ---
 
-def draw_minimal_mandala(frame_img, width, height, rms, param1, param2, beat, freq_data, color_settings):
+def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings):
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
+    max_iter = max(20, min(100, int(50 + rms * 50)))
+    zoom = 100 + rms * 200 + low_freq * 300
+    move_x = np.sin(frame_idx * 0.01) * 0.5 + mid_freq * 0.3
+    move_y = np.cos(frame_idx * 0.008) * 0.5 + high_freq * 0.2
+    audio_influence = rms * 2 + (low_freq + mid_freq + high_freq) / 3
+    fractal = mandelbrot_set(width, height, max_iter, zoom, move_x, move_y, audio_influence)
     if color_settings['use_frequency_colors']:
-        main_color, freq_colors, intensities = get_frequency_colors(
-            low_freq, mid_freq, high_freq,
-            color_settings['low_freq_color'],
-            color_settings['mid_freq_color'], 
-            color_settings['high_freq_color']
-        )
-    else:
-        main_color = (int(min(255, rms * 500)), 50, 150)
-    
-    center = (width // 2, height // 2)
-    max_radius = min(width, height) // 6
-    base_radius = int(min(max_radius, rms * 150))
-    
-    # Disegna cerchi concentrici per diverse frequenze
-    if color_settings['use_frequency_colors']:
-        # Cerchio esterno per frequenze basse
-        low_radius = base_radius + int(low_freq * 50)
-        cv2.circle(frame_img, center, min(low_radius, max_radius), freq_colors[0], thickness=3 if beat else 1)
-        
-        # Cerchio medio per frequenze medie  
-        mid_radius = int(base_radius * 0.7) + int(mid_freq * 30)
-        cv2.circle(frame_img, center, min(mid_radius, max_radius), freq_colors[1], thickness=2)
-        
-        # Cerchio interno per frequenze acute
-        high_radius = int(base_radius * 0.4) + int(high_freq * 20)
-        cv2.circle(frame_img, center, min(high_radius, max_radius), freq_colors[2], thickness=4 if beat else 2)
-    else:
-        cv2.circle(frame_img, center, base_radius, main_color, thickness=3 if beat else 1)
-    
+        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
+    alpha = 0.8 if beat else 0.6
+    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
     return frame_img
 
-def draw_minimal_waves(frame_img, width, height, rms, param1, frame_idx, beat, freq_data, color_settings):
+def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings):
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
-    amplitude = int(min(height // 4, rms * 200))
-    step = max(10, width // 50)
-    
-    for x in range(0, width, step):
-        if color_settings['use_frequency_colors']:
-            # Usa frequenze diverse per onde diverse
-            low_y = int(height / 2 + amplitude * np.sin(0.05 * x + frame_idx * 0.1) * (1 + low_freq))
-            mid_y = int(height / 2 + amplitude * np.sin(0.1 * x + frame_idx * 0.2) * (1 + mid_freq))
-            high_y = int(height / 2 + amplitude * np.sin(0.2 * x + frame_idx * 0.3) * (1 + high_freq))
-            
-            circle_radius = max(2, min(8, width // 160))
-            
-            # Disegna onde per ogni banda di frequenza
-            low_color = hex_to_bgr(color_settings['low_freq_color'])
-            mid_color = hex_to_bgr(color_settings['mid_freq_color'])
-            high_color = hex_to_bgr(color_settings['high_freq_color'])
-            
-            if low_freq > 0.01:
-                cv2.circle(frame_img, (x, max(0, min(height-1, low_y))), circle_radius, low_color, -1)
-            if mid_freq > 0.01:
-                cv2.circle(frame_img, (x, max(0, min(height-1, mid_y))), circle_radius//2, mid_color, -1)
-            if high_freq > 0.01:
-                cv2.circle(frame_img, (x, max(0, min(height-1, high_y))), max(1, circle_radius//3), high_color, -1)
-        else:
-            y = int(height / 2 + amplitude * np.sin(0.1 * x + frame_idx * 0.2))
-            color = (150, 50, int(min(255, rms * 500)))
-            circle_radius = max(2, min(8, width // 160))
-            cv2.circle(frame_img, (x, y), circle_radius, color, -1)
-    
+    max_iter = max(30, min(80, int(40 + rms * 40)))
+    c_real = -0.7 + np.sin(frame_idx * 0.02) * 0.3 + low_freq * 0.5
+    c_imag = 0.27015 + np.cos(frame_idx * 0.015) * 0.2 + mid_freq * 0.4
+    zoom = 150 + rms * 100 + high_freq * 200
+    audio_mod = rms + (low_freq + mid_freq + high_freq) / 3
+    fractal = julia_set(width, height, max_iter, c_real, c_imag, zoom, audio_mod)
+    if color_settings['use_frequency_colors']:
+        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
+    alpha = 0.9 if beat else 0.7
+    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
+    return frame_img
+
+def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings):
+    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
+    max_iter = max(25, min(70, int(35 + rms * 35)))
+    zoom = 200 + rms * 150
+    move_x = -1.8 + np.sin(frame_idx * 0.005) * 0.2
+    move_y = -0.08 + np.cos(frame_idx * 0.007) * 0.1
+    audio_influence = rms * 1.5
+    fractal = generate_burning_ship(width, height, max_iter, zoom, move_x, move_y, audio_influence)
+    if color_settings['use_frequency_colors']:
+        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
+    alpha = 0.85 if beat else 0.65
+    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
+    return frame_img
+
+def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings):
+    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
+    iterations = 4 + int(rms * 2)
+    audio_scale = rms + (low_freq + mid_freq + high_freq) / 3
+    fractal = generate_sierpinski_carpet(width, height, iterations, audio_scale)
+    if color_settings['use_frequency_colors']:
+        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
+    alpha = 0.7 if beat else 0.5
+    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
     return frame_img
 
 def merge_video_audio(video_path, audio_path, output_path):
-    """Combina video e audio usando ffmpeg"""
     try:
         cmd = [
-            'ffmpeg', '-y',  # -y per sovrascrivere il file se esiste
-            '-i', video_path,  # input video
-            '-i', audio_path,  # input audio
-            '-c:v', 'copy',    # copia il codec video senza ricodifica
-            '-c:a', 'aac',     # usa codec audio AAC
-            '-shortest',       # termina quando finisce il più corto
+            'ffmpeg', '-y',
+            '-i', video_path,
+            '-i', audio_path,
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-shortest',
             output_path
         ]
-        
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
         if result.returncode == 0:
             return True, "Merge completato con successo"
         else:
             return False, f"Errore ffmpeg: {result.stderr}"
-            
     except FileNotFoundError:
         return False, "ffmpeg non trovato. Installa ffmpeg sul sistema."
     except Exception as e:
         return False, f"Errore durante il merge: {str(e)}"
 
+# --- NUOVA FUNZIONE PER GLI EFFETTI VISIVI ---
+
+def apply_visual_effects(frame_img, effects_settings):
+    img = frame_img.copy()
+    if effects_settings.get("blur", False):
+        img = cv2.GaussianBlur(img, (7,7), 0)
+    if effects_settings.get("increase_contrast", False):
+        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        l, a, b = cv2.split(lab)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        cl = clahe.apply(l)
+        limg = cv2.merge((cl,a,b))
+        img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+    if effects_settings.get("vignette", False):
+        rows, cols = img.shape[:2]
+        kernel_x = cv2.getGaussianKernel(cols, cols/2)
+        kernel_y = cv2.getGaussianKernel(rows, rows/2)
+        kernel = kernel_y * kernel_x.T
+        mask = 255 * kernel / np.linalg.norm(kernel)
+        vignette = np.copy(img)
+        for i in range(3):
+            vignette[:,:,i] = vignette[:,:,i] * mask
+        img = vignette.astype(np.uint8)
+    return img
+
 # --- INTERFACCIA STREAMLIT ---
 
-st.title("🎨 **SynestheticFlow**")
-st.markdown("*<span style='font-size: 12px;'>by loop507</span>*", unsafe_allow_html=True)
+st.title("🎵 Fractal Audio Visualizer")
 
-# Selezione formato video
-st.subheader("📐 Formato Video")
-selected_format = st.selectbox(
-    "Scegli il rapporto di aspetto:",
-    list(VIDEO_FORMATS.keys()),
-    index=0  # Default 16:9
-)
+uploaded_file = st.file_uploader("Carica un file audio (.wav, .mp3)", type=["wav","mp3"])
 
-width, height = VIDEO_FORMATS[selected_format]
-st.info(f"📺 Formato selezionato: **{selected_format}** - Risoluzione: {width}x{height}px")
+if uploaded_file is not None:
+    temp_dir = tempfile.mkdtemp()
+    audio_path = prepare_audio_file(uploaded_file, temp_dir)
+    y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
+    
+    duration = librosa.get_duration(y=y, sr=sr)
+    st.write(f"Durata audio: {duration:.2f} secondi, BPM stimato: {tempo:.2f}")
+    
+    video_format = st.selectbox("Seleziona formato video", list(VIDEO_FORMATS.keys()))
+    width, height = VIDEO_FORMATS[video_format]
+    
+    # Impostazioni colori frequenze
+    st.subheader("🎨 Colori Frequenze")
+    use_freq_colors = st.checkbox("Usa colori diversi per bande frequenza", value=True)
+    low_freq_color = st.color_picker("Colore Basse Frequenze", "#FF0000")
+    mid_freq_color = st.color_picker("Colore Medie Frequenze", "#00FF00")
+    high_freq_color = st.color_picker("Colore Alte Frequenze", "#0000FF")
+    color_settings = {
+        'use_frequency_colors': use_freq_colors,
+        'low_freq_color': low_freq_color,
+        'mid_freq_color': mid_freq_color,
+        'high_freq_color': high_freq_color
+    }
 
-# --- CONTROLLI COLORI ---
-st.subheader("🎨 Controlli Colori")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    use_frequency_colors = st.checkbox("🌈 Usa colori basati su frequenze", value=True)
-    background_color = st.color_picker("🖤 Colore sfondo", value="#000000")
-
-with col2:
-    if use_frequency_colors:
-        st.markdown("**Colori Frequenze:**")
-        low_freq_color = st.color_picker("🔴 Frequenze Basse", value="#FF0000")
-        mid_freq_color = st.color_picker("🟢 Frequenze Medie", value="#00FF00") 
-        high_freq_color = st.color_picker("🔵 Frequenze Acute", value="#0080FF")
-    else:
-        low_freq_color = "#FF0000"
-        mid_freq_color = "#00FF00"
-        high_freq_color = "#0080FF"
-        st.info("Abilita 'Colori basati su frequenze' per personalizzare")
-
-# Salva impostazioni colori
-color_settings = {
-    'use_frequency_colors': use_frequency_colors,
-    'background_color': background_color,
-    'low_freq_color': low_freq_color,
-    'mid_freq_color': mid_freq_color,
-    'high_freq_color': high_freq_color
-}
-
-uploaded_audio = st.file_uploader("🎵 Carica file audio", type=["wav", "mp3", "ogg"])
-
-if uploaded_audio:
-    with tempfile.TemporaryDirectory() as temp_dir:
-        try:
-            audio_path = prepare_audio_file(uploaded_audio, temp_dir)
-            y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
-            duration = librosa.get_duration(filename=audio_path)
-            width, height, fps, est_size = get_optimal_settings(duration, width, height)
+    # Scelta tipo fractal
+    st.subheader("Tipo di Frattale")
+    fractal_type = st.selectbox("Scegli tipo", ["Mandelbrot", "Julia", "Burning Ship", "Sierpinski Carpet"])
+    
+    # Effetti visivi opzionali
+    st.subheader("✨ Effetti Visivi Aggiuntivi")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        effect_blur = st.checkbox("Blur (sfocatura)", value=False)
+    with col2:
+        effect_contrast = st.checkbox("Contrasto aumentato", value=False)
+    with col3:
+        effect_vignette = st.checkbox("Vignettatura", value=False)
+    effects_settings = {
+        "blur": effect_blur,
+        "increase_contrast": effect_contrast,
+        "vignette": effect_vignette
+    }
+    
+    # Bottone start
+    if st.button("Genera video"):
+        fps = 20
+        frame_count = int(duration * fps)
+        frame_length = int(len(y) / frame_count)
+        
+        video_path = f"{temp_dir}/output_video.avi"
+        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        video_writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+        
+        stframe = st.empty()
+        progress_bar = st.progress(0)
+        
+        for i in range(frame_count):
+            audio_chunk = y[i*frame_length : (i+1)*frame_length]
+            rms, freq_data = process_frame_data(audio_chunk)
+            beat = any((beat_times >= i/fps) & (beat_times < (i+1)/fps))
             
-            st.info(f"🎼 BPM: {float(tempo):.0f} | ⏱️ {float(duration):.1f}s | 🎮 {fps} FPS | 📆 ~{est_size} MB")
-
-            if st.button("🎬 CREA VIDEO"):
-                # Crea il video senza audio
-                video_temp = os.path.join(temp_dir, "video_temp.mp4")
-                video_final = os.path.join(temp_dir, "video_with_audio.mp4")
-                
-                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                video_writer = cv2.VideoWriter(video_temp, fourcc, fps, (width, height))
-                video_placeholder = st.empty()
-                progress_bar = st.progress(0)
-                
-                frame_count = int(duration * fps)
-                frame_duration = 1.0 / fps
-                
-                # Colore di sfondo
-                bg_color_bgr = hex_to_bgr(color_settings['background_color'])
-                
-                st.info("🎬 Generazione frames video...")
-                
-                for frame_idx in range(frame_count):
-                    start_time = frame_idx * frame_duration
-                    start_sample = int(start_time * sr)
-                    end_sample = start_sample + int(frame_duration * sr)
-                    audio_chunk = y[start_sample:end_sample] if end_sample <= len(y) else y[start_sample:]
-                    rms, freq_data = process_frame_data(audio_chunk)
-                    beat = np.any((beat_times >= start_time) & (beat_times < start_time + frame_duration))
-                    
-                    # Crea frame con colore di sfondo personalizzato
-                    frame_img = np.full((height, width, 3), bg_color_bgr, dtype=np.uint8)
-                    
-                    if frame_idx % 2 == 0:
-                        frame_img = draw_minimal_mandala(frame_img, width, height, rms, 5, 2, beat, freq_data, color_settings)
-                    else:
-                        frame_img = draw_minimal_waves(frame_img, width, height, rms, 5, frame_idx, beat, freq_data, color_settings)
-                    
-                    video_writer.write(frame_img)
-                    frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
-                    video_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
-                    
-                    # Aggiorna progress bar
-                    progress = (frame_idx + 1) / frame_count
-                    progress_bar.progress(progress)
-                    
-                    # Velocizza la preview (meno sleep)
-                    time.sleep(frame_duration * 0.1)  # 10% della durata reale per anteprima veloce
-                
-                video_writer.release()
-                st.success("✅ Frames video generati!")
-                
-                # Combina video e audio
-                st.info("🎵 Sincronizzazione audio...")
-                success, message = merge_video_audio(video_temp, audio_path, video_final)
-                
-                if success:
-                    st.success("🎉 Video con audio generato con successo!")
-                    with open(video_final, "rb") as f:
-                        video_bytes = f.read()
-                    
-                    # Nome file basato sul formato selezionato
-                    format_name = selected_format.split(" ")[0].replace(":", "x")
-                    filename = f"synesthetic_flow_{format_name}_{width}x{height}.mp4"
-                    
-                    st.download_button(
-                        "⬇️ Scarica Video Completo", 
-                        video_bytes, 
-                        file_name=filename, 
-                        mime="video/mp4"
-                    )
-                else:
-                    st.warning(f"⚠️ {message}")
-                    st.info("📹 Scarica il video senza audio:")
-                    with open(video_temp, "rb") as f:
-                        video_bytes = f.read()
-                    
-                    format_name = selected_format.split(" ")[0].replace(":", "x")
-                    filename = f"synesthetic_flow_{format_name}_{width}x{height}_no_audio.mp4"
-                    
-                    st.download_button(
-                        "⬇️ Scarica Video (solo visivo)", 
-                        video_bytes, 
-                        file_name=filename, 
-                        mime="video/mp4"
-                    )
-
-        except Exception as e:
-            st.error(f"❌ Errore generazione video: {e}")
-
-# Informazioni tecniche nell'expander
-with st.expander("ℹ️ Informazioni Tecniche"):
-    st.markdown("""
-    **SynestheticFlow Enhanced** genera visualizzazioni avanzate sincronizzate con l'audio:
-    
-    - 🎵 **Analisi Audio**: Rileva BPM, beat e analizza frequenze (basse, medie, acute)
-    - 🌈 **Colori Dinamici**: Colori che reagiscono alle diverse bande di frequenza
-    - 🎨 **Personalizzazione**: Controllo completo su colori di frequenze e sfondo  
-    - 📐 **Formati**: 3 rapporti ottimizzati (16:9, 1:1, 9:16)
-    - 🎬 **Sincronizzazione**: 20 FPS per fluidità ottimale
-    - 🔊 **Audio**: Incorporato nel video finale via ffmpeg
-    
-    **Nuove Funzionalità**:
-    - **Analisi Frequenze**: Separa basse (bassi), medie (voci), acute (hi-hat)
-    - **Colori Reattivi**: Ogni banda di frequenza ha un colore personalizzabile
-    - **Sfondo Personalizzabile**: Scegli il colore di sfondo del video
-    - **Visualizzazioni Avanzate**: Mandala e onde multi-frequenza
-    
-    **Formati disponibili**:
-    - **16:9 (Landscape)**: 1280x720px - Ideale per YouTube, monitor widescreen
-    - **1:1 (Square)**: 720x720px - Perfetto per Instagram post
-    - **9:16 (Portrait)**: 720x1280px - Ottimizzato per TikTok, Instagram Stories
-    
-    **Requisiti**: ffmpeg installato sul sistema per l'audio
-    """)
+            frame_img = np.zeros((height, width, 3), dtype=np.uint8)
+            
+            if fractal_type == "Mandelbrot":
+                frame_img = draw_mandelbrot_fractal(frame_img, width, height, rms, i, beat, freq_data, color_settings)
+            elif fractal_type == "Julia":
+                frame_img = draw_julia_fractal(frame_img, width, height, rms, i, beat, freq_data, color_settings)
+            elif fractal_type == "Burning Ship":
+                frame_img = draw_burning_ship_fractal(frame_img, width, height, rms, i, beat, freq_data, color_settings)
+            elif fractal_type == "Sierpinski Carpet":
+                frame_img = draw_sierpinski_fractal(frame_img, width, height, rms, i, beat, freq_data, color_settings)
+            
+            # Applica effetti
+            frame_img = apply_visual_effects(frame_img, effects_settings)
+            
+            video_writer.write(frame_img)
+            
+            if i % 10 == 0:
+                progress_bar.progress(min(100, int(i/frame_count*100)))
+                stframe.image(frame_img, channels="BGR", caption=f"Frame {i+1}/{frame_count}")
+        
+        video_writer.release()
+        
+        # Merge audio e video
+        output_final = f"{temp_dir}/final_output.mp4"
+        success, msg = merge_video_audio(video_path, audio_path, output_final)
+        if success:
+            st.success("Video generato con successo!")
+            video_file = open(output_final, 'rb').read()
+            st.video(video_file)
+        else:
+            st.error(f"Errore durante il merge audio-video: {msg}")
