@@ -120,7 +120,7 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
     for y in range(height):
         for x in range(width):
             z_real = (x - width/2) / (zoom * width/4)
-            z_imag = (y - height/2) / (zoom * height/4)
+            z_imag = (y - height/2) / (zoom * width/4)
             
             iteration = 0
             while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
@@ -371,8 +371,8 @@ def merge_video_audio(video_path, audio_path, output_path):
 
 # --- INTERFACCIA STREAMLIT MIGLIORATA ---
 
-st.title("🌌 **SynestheticFlow Fractal**")
-st.markdown("*<span style='font-size: 12px;'>Advanced Procedural Fractal Visualizer by loop507</span>*", unsafe_allow_html=True)
+st.title("🌌 **SynestheticFlow**")
+st.markdown("*<span style='font-size: 12px;'>Visualizer by loop507</span>*", unsafe_allow_html=True)
 
 # Selezione formato video
 st.subheader("📐 Formato Video")
@@ -394,8 +394,7 @@ fractal_type = st.selectbox(
         "🌀 Mandelbrot Set - Classico e ipnotico",
         "🔥 Julia Set - Dinamico e fluido", 
         "🚢 Burning Ship - Forme organiche",
-        "📐 Sierpinski Carpet - Geometrico",
-        "🎲 Mix Casuale - Cambia ogni 5 secondi"
+        "📐 Sierpinski Carpet - Geometrico"
     ],
     index=0
 )
@@ -406,7 +405,7 @@ st.subheader("🎨 Controlli Colori")
 col1, col2 = st.columns(2)
 
 with col1:
-    use_frequency_colors = st.checkbox("🌈 Usa colori basati su frequenze", value=True)
+    use_frequency_colors = st.checkbox("🌈 Effetti generativi", value=True)
     background_color = st.color_picker("🖤 Colore sfondo", value="#000000")
 
 with col2:
@@ -420,7 +419,7 @@ with col2:
         low_freq_color = "#FF0066"
         mid_freq_color = "#00FF88"
         high_freq_color = "#0066FF"
-        st.info("Abilita 'Colori basati su frequenze' per personalizzare")
+        st.info("Abilita 'Effetti generativi' per personalizzare")
 
 color_settings = {
     'use_frequency_colors': use_frequency_colors,
@@ -456,88 +455,27 @@ if uploaded_audio:
                 bg_color_bgr = hex_to_bgr(color_settings['background_color'])
                 
                 st.info("🌌 Generazione frattali procedurali...")
-                
-                # Variabile per il tipo di frattale corrente nel "Mix Casuale"
-                current_fractal_func = None
-                last_fractal_func = None
-                
-                # Lista delle funzioni frattali per il mix casuale
-                fractal_funcs = [
-                    draw_mandelbrot_fractal,
-                    draw_julia_fractal,
-                    draw_burning_ship_fractal,
-                    draw_sierpinski_fractal
-                ]
-                
-                # Variabile per la transizione fluida
-                transition_frames = int(fps * 1.5) # Durata della transizione: 1.5 secondi
-                current_transition_frame = 0
-                
+                                
                 for frame_idx in range(frame_count):
                     start_time = frame_idx * frame_duration
                     
-                    # Logica per il "Mix Casuale"
-                    if "Mix Casuale" in fractal_type:
-                        # Cambia frattale ogni 5 secondi, ma con una transizione
-                        if (int(start_time) % 5 == 0 and int(start_time) != 0) and (int(start_time - frame_duration) % 5 != 0 or current_transition_frame > 0):
-                            if current_transition_frame == 0: # Inizia una nuova transizione
-                                last_fractal_func = current_fractal_func
-                                new_fractal_func = random.choice([f for f in fractal_funcs if f != last_fractal_func])
-                                current_fractal_func = new_fractal_func
-                                current_transition_frame = transition_frames
-                        
-                        if current_fractal_func is None: # Inizializza il primo frattale
-                            current_fractal_func = random.choice(fractal_funcs)
-                            last_fractal_func = current_fractal_func # Assicurati che non sia None per la prima transizione
-                            
-                        # Calcola l'alpha per il cross-fading
-                        alpha_new_fractal = 1.0
-                        if current_transition_frame > 0:
-                            alpha_new_fractal = 1.0 - (current_transition_frame / transition_frames)
-                            alpha_new_fractal = max(0.0, min(1.0, alpha_new_fractal)) # Clamping
-                            current_transition_frame -= 1
-                        
-                        # Ottieni i frame per entrambi i frattali (se in transizione)
-                        frame_img_old = np.full((height, width, 3), bg_color_bgr, dtype=np.uint8)
-                        frame_img_new = np.full((height, width, 3), bg_color_bgr, dtype=np.uint8)
-
-                        # Processa i dati audio per il frame corrente
-                        start_sample = int(start_time * sr)
-                        end_sample = start_sample + int(frame_duration * sr)
-                        audio_chunk = y[start_sample:end_sample] if end_sample <= len(y) else y[start_sample:]
-                        rms, freq_data = process_frame_data(audio_chunk)
-                        beat = np.any((beat_times >= start_time) & (beat_times < start_time + frame_duration))
-
-                        # Genera il frame del frattale precedente (se in transizione)
-                        if current_transition_frame > 0 and last_fractal_func is not None:
-                             frame_img_old = last_fractal_func(frame_img_old.copy(), width, height, rms, frame_idx, beat, freq_data, color_settings)
-                        
-                        # Genera il frame del nuovo frattale
-                        frame_img_new = current_fractal_func(frame_img_new.copy(), width, height, rms, frame_idx, beat, freq_data, color_settings)
-                        
-                        # Combina i due frame con il cross-fading
-                        if current_transition_frame > 0 and last_fractal_func is not None:
-                            frame_img = cv2.addWeighted(frame_img_old, 1 - alpha_new_fractal, frame_img_new, alpha_new_fractal, 0)
-                        else:
-                            frame_img = frame_img_new # Se non in transizione, mostra solo il nuovo frattale
-                            
-                    else: # Se non è "Mix Casuale", seleziona il frattale fisso
-                        start_sample = int(start_time * sr)
-                        end_sample = start_sample + int(frame_duration * sr)
-                        audio_chunk = y[start_sample:end_sample] if end_sample <= len(y) else y[start_sample:]
-                        rms, freq_data = process_frame_data(audio_chunk)
-                        beat = np.any((beat_times >= start_time) & (beat_times < start_time + frame_duration))
-                        
-                        frame_img = np.full((height, width, 3), bg_color_bgr, dtype=np.uint8)
-                        
-                        if "Mandelbrot" in fractal_type:
-                            frame_img = draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
-                        elif "Julia" in fractal_type:
-                            frame_img = draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
-                        elif "Burning Ship" in fractal_type:
-                            frame_img = draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
-                        elif "Sierpinski" in fractal_type:
-                            frame_img = draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
+                    start_sample = int(start_time * sr)
+                    end_sample = start_sample + int(frame_duration * sr)
+                    audio_chunk = y[start_sample:end_sample] if end_sample <= len(y) else y[start_sample:]
+                    rms, freq_data = process_frame_data(audio_chunk)
+                    beat = np.any((beat_times >= start_time) & (beat_times < start_time + frame_duration))
+                    
+                    frame_img = np.full((height, width, 3), bg_color_bgr, dtype=np.uint8)
+                    
+                    # Seleziona il tipo di frattale (senza mix casuale)
+                    if "Mandelbrot" in fractal_type:
+                        frame_img = draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
+                    elif "Julia" in fractal_type:
+                        frame_img = draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
+                    elif "Burning Ship" in fractal_type:
+                        frame_img = draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
+                    elif "Sierpinski" in fractal_type:
+                        frame_img = draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings)
 
                     video_writer.write(frame_img)
                     frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
@@ -560,7 +498,7 @@ if uploaded_audio:
                         video_bytes = f.read()
                     
                     format_name = selected_format.split(" ")[0].replace(":", "x")
-                    fractal_name = fractal_type.split(" ")[1].lower() if "Mix" not in fractal_type else "mix"
+                    fractal_name = fractal_type.split(" ")[1].lower() # Ora non c'è il mix
                     filename = f"fractal_{fractal_name}_{format_name}_{width}x{height}.mp4"
                     
                     st.download_button(
@@ -575,7 +513,7 @@ if uploaded_audio:
                         video_bytes = f.read()
                     
                     format_name = selected_format.split(" ")[0].replace(":", "x")
-                    fractal_name = fractal_type.split(" ")[1].lower() if "Mix" not in fractal_type else "mix"
+                    fractal_name = fractal_type.split(" ")[1].lower()
                     filename = f"fractal_{fractal_name}_{format_name}_{width}x{height}_no_audio.mp4"
                     
                     st.download_button(
@@ -591,7 +529,7 @@ if uploaded_audio:
 # Informazioni tecniche nell'expander
 with st.expander("🌌 Informazioni Frattali"):
     st.markdown("""
-    **SynestheticFlow Fractal** genera frattali matematici complessi sincronizzati con l'audio:
+    **SynestheticFlow** genera frattali matematici complessi sincronizzati con l'audio:
     
     **🌀 Tipi di Frattali Disponibili:**
     
@@ -599,7 +537,6 @@ with st.expander("🌌 Informazioni Frattali"):
     - **Julia Set**: Forme fluide e dinamiche che cambiano costantemente.
     - **Burning Ship**: Crea strutture che ricordano navi e paesaggi bruciati.
     - **Sierpinski Carpet**: Pattern geometrici auto-simili. 
-    - **Mix Casuale**: Combina tutti i frattali cambiando ogni 5 secondi con una transizione fluida.
     
     **🎵 Reattività Audio:**
     - **RMS (Volume)**: Controlla zoom, intensità e velocità di morphing.
