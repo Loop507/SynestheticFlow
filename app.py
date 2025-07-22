@@ -26,7 +26,7 @@ def prepare_audio_file(uploaded_file, temp_dir):
 
 def analyze_audio_minimal(audio_path):
     y, sr = librosa.load(audio_path, sr=11025)
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr) # CORREZIONE QUI
+    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     return y, beat_times, tempo, sr
 
@@ -79,8 +79,9 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
         for x in range(width):
             # Coordinate complesse con zoom e movimento
             # Reso più esplicito per Numba, assicurando che tutti siano float64 fin dall'inizio
-            c_real_base = (float(x) - float(width) / 2.0) / (float(zoom) * float(width) / 4.0) + float(move_x)
-            c_imag_base = (float(y) - float(height) / 2.0) / (float(zoom) * float(height) / 4.0) + float(move_y)
+            # Rimosse conversioni float() ridondanti per semplificare l'inferenza di Numba
+            c_real_base = (float(x) - width / 2.0) / (zoom * width / 4.0) + move_x
+            c_imag_base = (float(y) - height / 2.0) / (zoom * height / 4.0) + move_y
 
             # Aggiunta influenza audio - modulazione sottile
             c_real = c_real_base + audio_influence * 0.005 * math.sin(x * 0.001)
@@ -131,7 +132,7 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
     for y in range(height):
         for x in range(width):
             z_real = (x - width/2) / (zoom * width/4)
-            z_imag = (y - height/2) / (zoom * width/4)
+            z_imag = (y - height/2) / (zoom * height/4)
 
             iteration = 0
             while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
