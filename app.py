@@ -8,7 +8,6 @@ import os
 import subprocess
 from numba import jit
 import random
-# Rimosso: import math, in quanto la tua versione funzionante usa np.sin/np.cos
 
 # --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
@@ -77,18 +76,19 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
 
     for y in range(height):
         for x in range(width):
-            # Coordinate complesse con zoom e movimento (come nella tua versione funzionante)
+            # Coordinate complesse con zoom e movimento
             c_real = (x - width/2) / (zoom * width/4) + move_x
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
-            # Aggiunta influenza audio - modulazione sottile (usando np.sin/np.cos)
-            c_real += audio_influence * 0.005 * np.sin(x * 0.001)
-            c_imag += audio_influence * 0.005 * np.cos(y * 0.001)
+            # Aggiunta influenza audio - modulazione sottile
+            # CAUSA PROBLEMA: x e y sono interi, np.sin/cos potrebbero inferire un array
+            c_real += audio_influence * 0.005 * np.sin(float(x) * 0.001) # Modificato
+            c_imag += audio_influence * 0.005 * np.cos(float(y) * 0.001) # Modificato
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
 
-            # Calcolo iterativo (come nella tua versione funzionante)
+            # Calcolo iterativo
             while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
                 z_real_new = z_real*z_real - z_imag*z_imag + c_real
                 z_imag = 2.0*z_real*z_imag + c_imag
@@ -154,8 +154,9 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Influenza audio
-            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
-            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
+            # CAUSA POTENZIALE PROBLEMA: x e y sono interi, np.sin/cos potrebbero inferire un array
+            c_real += audio_influence * 0.003 * np.sin(float(x) * 0.002 + float(y) * 0.001) # Modificato
+            c_imag += audio_influence * 0.003 * np.cos(float(x) * 0.001 + float(y) * 0.002) # Modificato
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
@@ -260,29 +261,16 @@ def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, co
 
 # --- FUNZIONI DI DISEGNO FRATTALE PER IL PROCESSING ---
 
-def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor, bpm, bpm_sensitivity_factor):
-    """Disegna frattale di Mandelbrot reattivo all'audio con movimenti più fluidi e controllo BPM"""
+def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
+    """Disegna frattale di Mandelbrot reattivo all'audio"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    # Normalizza BPM per usarlo come fattore di scala (es. BPM da 60 a 180 -> fattore da 0.5 a 1.5)
-    bpm_scaled = 1.0 + (bpm - 120) / 60.0 * bpm_sensitivity_factor # Calibra questo range!
-    bpm_scaled = np.clip(bpm_scaled, 0.5, 2.0) # Limita il fattore per evitare estremi
-
-    # Parametri dinamici basati sull'audio e BPM
-    max_iter = max(50, min(200, int(80 + rms * 150 * movement_scale_factor * bpm_scaled)))
-
-    # Modifiche per movimenti più fluidi:
-    base_zoom = 1.5 + np.sin(frame_idx * 0.001 * movement_scale_factor * bpm_scaled) * 0.5
-    audio_zoom_influence = rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor
-    zoom = base_zoom + audio_zoom_influence * 0.5
-
-    smooth_move_x_base = -0.75 + np.sin(frame_idx * 0.002 * movement_scale_factor * bpm_scaled) * 0.25
-    smooth_move_y_base = 0.05 + np.cos(frame_idx * 0.003 * movement_scale_factor * bpm_scaled) * 0.2
-
-    move_x = smooth_move_x_base + mid_freq * 0.05 * movement_scale_factor
-    move_y = smooth_move_y_base + high_freq * 0.04 * movement_scale_factor
-
-    audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor * bpm_scaled
+    # Parametri dinamici basati sull'audio
+    max_iter = max(50, min(200, int(80 + rms * 150 * movement_scale_factor))) # Più iterazioni per più dettaglio
+    zoom = 1.5 + rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor # Zoom più sensibile
+    move_x = np.sin(frame_idx * 0.005 * movement_scale_factor) * 0.2 - 0.75 + mid_freq * 0.1 * movement_scale_factor # Movimento più lento e posizionato
+    move_y = np.cos(frame_idx * 0.007 * movement_scale_factor) * 0.2 + 0.05 + high_freq * 0.08 * movement_scale_factor
+    audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
 
     fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
 
@@ -294,19 +282,17 @@ def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     return frame_img
 
-def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor, bpm, bpm_sensitivity_factor):
-    """Disegna frattale di Julia reattivo all'audio e controllo BPM"""
+def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
+    """Disegna frattale di Julia reattivo all'audio"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    bpm_scaled = 1.0 + (bpm - 120) / 60.0 * bpm_sensitivity_factor
-    bpm_scaled = np.clip(bpm_scaled, 0.5, 2.0)
-
     # Parametri Julia dinamici
-    max_iter = max(50, min(150, int(70 + rms * 80 * movement_scale_factor * bpm_scaled)))
-    c_real_base = -0.7 + np.sin(frame_idx * 0.015 * movement_scale_factor * bpm_scaled) * 0.2
-    c_imag_base = 0.27015 + np.cos(frame_idx * 0.01 * movement_scale_factor * bpm_scaled) * 0.15
-    zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + high_freq * 2.0 * movement_scale_factor
-    audio_mod = (rms * 1.5 + (low_freq * 0.5 + mid_freq * 0.8 + high_freq * 0.2)) * movement_scale_factor * bpm_scaled # Modulazione combinata
+    max_iter = max(50, min(150, int(70 + rms * 80 * movement_scale_factor)))
+    # Variazione dei parametri C per Julia per effetti psichedelici
+    c_real_base = -0.7 + np.sin(frame_idx * 0.015 * movement_scale_factor) * 0.2
+    c_imag_base = 0.27015 + np.cos(frame_idx * 0.01 * movement_scale_factor) * 0.15
+    zoom = 1.0 + rms * 1.5 * movement_scale_factor + high_freq * 2.0 * movement_scale_factor
+    audio_mod = (rms * 1.5 + (low_freq * 0.5 + mid_freq * 0.8 + high_freq * 0.2)) * movement_scale_factor # Modulazione combinata
 
     fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
 
@@ -318,18 +304,15 @@ def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data
 
     return frame_img
 
-def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor, bpm, bpm_sensitivity_factor):
-    """Disegna frattale Burning Ship con controllo BPM"""
+def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
+    """Disegna frattale Burning Ship"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    bpm_scaled = 1.0 + (bpm - 120) / 60.0 * bpm_sensitivity_factor
-    bpm_scaled = np.clip(bpm_scaled, 0.5, 2.0)
-
-    max_iter = max(40, min(120, int(60 + rms * 60 * movement_scale_factor * bpm_scaled)))
-    zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + mid_freq * 2.0 * movement_scale_factor
-    move_x = -1.8 + np.sin(frame_idx * 0.003 * movement_scale_factor * bpm_scaled) * 0.1
-    move_y = -0.08 + np.cos(frame_idx * 0.005 * movement_scale_factor * bpm_scaled) * 0.05
-    audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor * bpm_scaled
+    max_iter = max(40, min(120, int(60 + rms * 60 * movement_scale_factor)))
+    zoom = 1.0 + rms * 1.5 * movement_scale_factor + mid_freq * 2.0 * movement_scale_factor
+    move_x = -1.8 + np.sin(frame_idx * 0.003 * movement_scale_factor) * 0.1
+    move_y = -0.08 + np.cos(frame_idx * 0.005 * movement_scale_factor) * 0.05
+    audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor
 
     fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
 
@@ -341,16 +324,13 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
 
     return frame_img
 
-def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor, bpm, bpm_sensitivity_factor):
-    """Disegna tappeto di Sierpinski con controllo BPM"""
+def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
+    """Disegna tappeto di Sierpinski"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    bpm_scaled = 1.0 + (bpm - 120) / 60.0 * bpm_sensitivity_factor
-    bpm_scaled = np.clip(bpm_scaled, 0.5, 2.0)
-
     # Aumenta la sensibilità delle iterazioni all'audio per un effetto più evidente
-    iterations = 3 + int(rms * 3 * movement_scale_factor * bpm_scaled) + int(low_freq * 2 * movement_scale_factor * bpm_scaled)
-    audio_scale = (rms + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor * bpm_scaled
+    iterations = 3 + int(rms * 3 * movement_scale_factor) + int(low_freq * 2 * movement_scale_factor)
+    audio_scale = (rms + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
 
     # Il colore di base del tappeto (prima della modulazione per frequenze)
     base_carpet_color_bgr = hex_to_bgr(color_settings['background_color']) # Usa il colore di sfondo o un colore predefinito
@@ -437,21 +417,6 @@ movement_scale_factors = {
 }
 current_movement_scale_factor = movement_scale_factors[movement_intensity]
 
-# Nuovo controllo per la sensibilità BPM
-st.subheader("🥁 Sensibilità BPM")
-bpm_sensitivity = st.selectbox(
-    "Quanto i BPM devono influenzare i movimenti?",
-    ["Bassa", "Media", "Alta"],
-    index=1 # Default a Media
-)
-
-bpm_sensitivity_factors = {
-    "Bassa": 0.5,
-    "Media": 1.0,
-    "Alta": 1.5
-}
-current_bpm_sensitivity_factor = bpm_sensitivity_factors[bpm_sensitivity]
-
 # --- CONTROLLI COLORI ---
 st.subheader("🎨 Controlli Colori")
 
@@ -522,13 +487,13 @@ if uploaded_audio:
 
                     # Seleziona il tipo di frattale (senza mix casuale)
                     if "Mandelbrot" in fractal_type:
-                        frame_img = draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor, tempo, current_bpm_sensitivity_factor)
+                        frame_img = draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor)
                     elif "Julia" in fractal_type:
-                        frame_img = draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor, tempo, current_bpm_sensitivity_factor)
+                        frame_img = draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor)
                     elif "Burning Ship" in fractal_type:
-                        frame_img = draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor, tempo, current_bpm_sensitivity_factor)
+                        frame_img = draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor)
                     elif "Sierpinski" in fractal_type:
-                        frame_img = draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor, tempo, current_bpm_sensitivity_factor)
+                        frame_img = draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, current_movement_scale_factor)
 
                     video_writer.write(frame_img)
                     frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
@@ -602,11 +567,6 @@ with st.expander("🌌 Informazioni Frattali"):
     - **Soft**: Movimenti più lenti e sottili.
     - **Medium**: Movimenti bilanciati e reattivi.
     - **Hard**: Movimenti rapidi e marcati per un effetto più psichedelico.
-
-    **🥁 Sensibilità BPM:**
-    - **Bassa**: I movimenti sono meno influenzati dai cambiamenti di BPM.
-    - **Media**: I movimenti reagiscono in modo equilibrato ai BPM.
-    - **Alta**: I movimenti sono fortemente influenzati dai BPM, creando effetti più dinamici con musica veloce.
 
     **⚡ Ottimizzazioni:**
     - Algoritmi compilati con Numba per performance superiori.
