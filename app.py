@@ -81,9 +81,8 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Aggiunta influenza audio - modulazione sottile
-            # CAUSA PROBLEMA: x e y sono interi, np.sin/cos potrebbero inferire un array
-            c_real += audio_influence * 0.005 * np.sin(float(x) * 0.001) # Modificato
-            c_imag += audio_influence * 0.005 * np.cos(float(y) * 0.001) # Modificato
+            c_real += audio_influence * 0.005 * np.sin(x * 0.001)
+            c_imag += audio_influence * 0.005 * np.cos(y * 0.001)
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
@@ -154,9 +153,8 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Influenza audio
-            # CAUSA POTENZIALE PROBLEMA: x e y sono interi, np.sin/cos potrebbero inferire un array
-            c_real += audio_influence * 0.003 * np.sin(float(x) * 0.002 + float(y) * 0.001) # Modificato
-            c_imag += audio_influence * 0.003 * np.cos(float(x) * 0.001 + float(y) * 0.002) # Modificato
+            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
+            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
 
             z_real, z_imag = 0.0, 0.0
             iteration = 0
@@ -262,14 +260,36 @@ def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, co
 # --- FUNZIONI DI DISEGNO FRATTALE PER IL PROCESSING ---
 
 def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
-    """Disegna frattale di Mandelbrot reattivo all'audio"""
+    """Disegna frattale di Mandelbrot reattivo all'audio con movimenti più fluidi"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
     # Parametri dinamici basati sull'audio
     max_iter = max(50, min(200, int(80 + rms * 150 * movement_scale_factor))) # Più iterazioni per più dettaglio
-    zoom = 1.5 + rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor # Zoom più sensibile
-    move_x = np.sin(frame_idx * 0.005 * movement_scale_factor) * 0.2 - 0.75 + mid_freq * 0.1 * movement_scale_factor # Movimento più lento e posizionato
-    move_y = np.cos(frame_idx * 0.007 * movement_scale_factor) * 0.2 + 0.05 + high_freq * 0.08 * movement_scale_factor
+
+    # Modifiche per movimenti più fluidi:
+    # Introduce un valore "storico" o "target" per smorzare i cambiamenti
+    # Inizializza questi valori fuori dal loop dei frame se fosse una funzione globale,
+    # ma qui per semplicità useremo una dipendenza dal frame_idx più graduale.
+
+    # 1. Zoom più fluido:
+    # Invece di dipendere solo dall'RMS corrente, possiamo fare una transizione più dolce.
+    # Un modo semplice è usare una funzione sinusoidale sul frame_idx per il movimento di base
+    # e poi aggiungere l'influenza RMS in modo più controllato.
+    base_zoom = 1.5 + np.sin(frame_idx * 0.001 * movement_scale_factor) * 0.5 # Movimento di zoom lento
+    audio_zoom_influence = rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor
+    zoom = base_zoom + audio_zoom_influence * 0.5 # Blenda l'influenza audio
+
+    # 2. Movimento X e Y più fluidi:
+    # Riduciamo la sensibilità diretta all'RMS per il movimento e usiamo funzioni di tempo più morbide.
+    # Usiamo una combinazione di seno e coseno con frequenze leggermente diverse
+    # per un percorso più complesso ma graduale.
+    smooth_move_x_base = -0.75 + np.sin(frame_idx * 0.002 * movement_scale_factor) * 0.25
+    smooth_move_y_base = 0.05 + np.cos(frame_idx * 0.003 * movement_scale_factor) * 0.2
+
+    # Aggiungi l'influenza delle frequenze in modo più sfumato ai movimenti base
+    move_x = smooth_move_x_base + mid_freq * 0.05 * movement_scale_factor
+    move_y = smooth_move_y_base + high_freq * 0.04 * movement_scale_factor
+
     audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
 
     fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
