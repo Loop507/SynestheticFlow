@@ -140,7 +140,7 @@ if uploaded_audio:
                     
                     video_writer.write(frame_img)
                     frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
-                    video_placeholder.image(frame_rgb, channels="RGB", use_column_width=True)
+                    video_placeholder.image(frame_rgb, channels="RGB", use_container_width=True)
                     
                     # Aggiorna progress bar
                     progress = (frame_idx + 1) / frame_count
