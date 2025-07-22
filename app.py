@@ -258,25 +258,25 @@ def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     # Movimenti costanti e modulati dall'audio e da movement_scale_factor
     time_factor = frame_idx * 0.001 * movement_scale_factor # Velocità base del movimento
-    
+
     # "Pulse" effect sul beat
     beat_pulse_zoom = 0.5 if beat else 0 # Zoom aggiuntivo sul beat
     beat_pulse_iter = 50 if beat else 0 # Iterazioni aggiuntive sul beat
 
     max_iter = max(50, min(250, int(80 + rms * 180 * movement_scale_factor + beat_pulse_iter)))
-    
+
     # Movimenti più complessi e fluidi
-    zoom = (1.5 + rms * 6 * movement_scale_factor + low_freq * 12 * movement_scale_factor + 
-            np.sin(time_factor * 2.5) * 0.3 * movement_scale_factor + beat_pulse_zoom) 
-    
+    zoom = (1.5 + rms * 6 * movement_scale_factor + low_freq * 12 * movement_scale_factor +
+            np.sin(time_factor * 2.5) * 0.3 * movement_scale_factor + beat_pulse_zoom)
+
     move_x = (-0.75 + np.sin(time_factor * 1.5) * 0.25 * movement_scale_factor + # Movimento sinusoidale costante
               mid_freq * 0.15 * movement_scale_factor) # Modulazione audio
-    
+
     move_y = (0.05 + np.cos(time_factor * 1.8) * 0.2 * movement_scale_factor + # Movimento sinusoidale costante
               high_freq * 0.12 * movement_scale_factor) # Modulazione audio
-    
+
     audio_influence = (rms * 2.5 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
-    
+
     fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
 
     # Color flash sul beat
@@ -289,10 +289,10 @@ def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-        
+
     alpha = 0.8 if beat else 0.65 # Blending più forte sul beat
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
+
     return frame_img
 
 def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
@@ -329,10 +329,10 @@ def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-        
+
     alpha = 0.9 if beat else 0.75 # Blending più intenso
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
+
     return frame_img
 
 def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
@@ -346,16 +346,16 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
     beat_pulse_iter = 30 if beat else 0
 
     max_iter = max(40, min(150, int(60 + rms * 80 * movement_scale_factor + beat_pulse_iter)))
-    
+
     zoom = (1.0 + rms * 1.8 * movement_scale_factor + mid_freq * 2.5 * movement_scale_factor +
             np.cos(time_factor * 1.5) * 0.4 * movement_scale_factor + beat_pulse_zoom)
-    
+
     move_x = (-1.8 + np.sin(time_factor * 1.0) * 0.15 * movement_scale_factor + # Movimento costante
               rms * 0.05 * movement_scale_factor)
-    
+
     move_y = (-0.08 + np.cos(time_factor * 1.2) * 0.1 * movement_scale_factor + # Movimento costante
               low_freq * 0.03 * movement_scale_factor)
-    
+
     audio_influence = (rms * 1.5 + high_freq * 0.8) * movement_scale_factor
 
     fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
@@ -368,10 +368,10 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-        
+
     alpha = 0.85 if beat else 0.7 # Leggermente più opaco
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
+
     return frame_img
 
 def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
@@ -403,10 +403,10 @@ def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-        
+
     alpha = 0.75 if beat else 0.6 # Blending per Sierpinski
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
+
     return frame_img
 
 # --- FUNZIONI DI MERGE VIDEO/AUDIO ---
@@ -422,14 +422,14 @@ def merge_video_audio(video_path, audio_path, output_path):
             '-shortest',       # termina quando finisce il più corto
             output_path
         ]
-        
+
         result = subprocess.run(cmd, capture_output=True, text=True)
-        
+
         if result.returncode == 0:
             return True, "Merge completato con successo"
         else:
             return False, f"Errore ffmpeg: {result.stderr}"
-            
+
     except FileNotFoundError:
         return False, "ffmpeg non trovato. Installa ffmpeg sul sistema."
     except Exception as e:
@@ -618,7 +618,7 @@ with st.expander("🌌 Informazioni Frattali"):
 
     - **Mandelbrot Set**: Il frattale più famoso, genera infinite spirali e forme organiche.
     - **Julia Set**: Forme fluide e dinamiche che cambiano costantemente.
-    - **Burning Ship**: Crea strutture che ricordano navi e paesaggi bruciati.
+    - **Burning Ship**: Forme organiche che ricordano navi e paesaggi bruciati.
     - **Sierpinski Carpet**: Pattern geometrici auto-simili.
 
     **🎵 Reattività Audio:**
