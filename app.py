@@ -78,21 +78,28 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
     for y in range(height):
         for x in range(width):
             # Coordinate complesse con zoom e movimento
-            c_real = (x - width/2) / (zoom * width/4) + move_x
-            c_imag = (y - height/2) / (zoom * height/4) + move_y
+            # Reso più esplicito per Numba
+            temp_c_real_base = (x - width / 2.0) / (zoom * width / 4.0) + move_x
+            temp_c_imag_base = (y - height / 2.0) / (zoom * height / 4.0) + move_y
 
             # Aggiunta influenza audio - modulazione sottile
             # Sostituito np.sin con math.sin e np.cos con math.cos
-            c_real += audio_influence * 0.005 * math.sin(x * 0.001)
-            c_imag += audio_influence * 0.005 * math.cos(y * 0.001)
+            c_real = temp_c_real_base + audio_influence * 0.005 * math.sin(x * 0.001)
+            c_imag = temp_c_imag_base + audio_influence * 0.005 * math.cos(y * 0.001)
 
-            z_real, z_imag = 0.0, 0.0
+            z_real = 0.0 # Inizializzazione esplicita come float
+            z_imag = 0.0 # Inizializzazione esplicita come float
             iteration = 0
 
             # Calcolo iterativo
-            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
-                z_real_new = z_real*z_real - z_imag*z_imag + c_real
-                z_imag = 2.0*z_real*z_imag + c_imag
+            while iteration < max_iter and (z_real * z_real + z_imag * z_imag) < 4.0:
+                # Esplicitiamo i calcoli intermedi per Numba
+                z_real_squared = z_real * z_real
+                z_imag_squared = z_imag * z_imag
+                two_z_real_z_imag = 2.0 * z_real * z_imag
+
+                z_real_new = z_real_squared - z_imag_squared + c_real
+                z_imag = two_z_real_z_imag + c_imag
                 z_real = z_real_new
                 iteration += 1
 
