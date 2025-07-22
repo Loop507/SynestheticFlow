@@ -3,20 +3,22 @@ import numpy as np
 import cv2
 import librosa
 import tempfile
+import time
 import os
-from pydub import AudioSegment
-from pydub.generators import WhiteNoise
-import psutil
+import subprocess
+from numba import jit
+import random
 
-# Configurazioni formato video
+# --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
     "16:9 (Landscape) - 1280x720": (1280, 720),
     "1:1 (Square) - 720x720": (720, 720),
     "9:16 (Portrait) - 720x1280": (720, 1280)
 }
 
+# --- FUNZIONI DI SUPPORTO ---
 def prepare_audio_file(uploaded_file, temp_dir):
-    audio_path = os.path.join(temp_dir, "input_audio.wav")
+    audio_path = f"{temp_dir}/input_audio.wav"
     with open(audio_path, "wb") as f:
         f.write(uploaded_file.read())
     return audio_path
@@ -27,16 +29,26 @@ def analyze_audio_minimal(audio_path):
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     return y, beat_times, tempo, sr
 
+def get_optimal_settings(duration, width, height):
+    fps = 20
+    estimated_size = (width * height * fps * duration) / (1024 * 1024)  # rough estimate
+    return width, height, fps, int(estimated_size)
+
 def analyze_frequency_bands(freq_data):
+    """Analizza le bande di frequenza (basse, medie, acute)"""
     if len(freq_data) == 0:
         return 0, 0, 0
+
     freq_data_norm = freq_data / (np.max(freq_data) + 1e-6)
+
     total_bins = len(freq_data_norm)
     low_end = total_bins // 3
     mid_end = (total_bins * 2) // 3
+
     low_freq = np.mean(freq_data_norm[:low_end]) if low_end > 0 else 0
     mid_freq = np.mean(freq_data_norm[low_end:mid_end]) if mid_end > low_end else 0
     high_freq = np.mean(freq_data_norm[mid_end:]) if total_bins > mid_end else 0
+
     return low_freq, mid_freq, high_freq
 
 def process_frame_data(audio_chunk):
@@ -45,49 +57,52 @@ def process_frame_data(audio_chunk):
     fft_data = np.abs(np.fft.fft(windowed_audio_chunk))
     return (*analyze_frequency_bands(fft_data), rms)
 
-def generate_video(audio_path, width, height, effect_type, sensitivity):
-    y, _, _, sr = analyze_audio_minimal(audio_path)
+def interpolate_parameters(start_params, end_params, factor):
+    """Interpolazione lineare tra due set di parametri."""
+    return start_params + (end_params - start_params) * factor
+
+def generate_fractal_video(audio_path, width, height, fractal_type, sensitivity):
+    y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
     duration = librosa.get_duration(y=y, sr=sr)
-    fps = 20
+    width, height, fps, _ = get_optimal_settings(duration, width, height)
+
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video_path = 'output_video.mp4'
+    video_path = 'output_fractal_video.mp4'
     video = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
 
+    prev_frame = None
     for i in range(int(duration * fps)):
         t = i / fps
         audio_chunk = y[int(t * sr):int((t + 1/fps) * sr)]
         low_freq, mid_freq, high_freq, rms = process_frame_data(audio_chunk)
-        frame = create_effect_frame(width, height, effect_type, rms, low_freq, mid_freq, high_freq, sensitivity)
+
+        frame = create_fractal_frame(width, height, fractal_type, rms, low_freq, mid_freq, high_freq, sensitivity)
+
+        if prev_frame is not None:
+            frame = interpolate_parameters(prev_frame, frame, 0.5)
+
         video.write(frame)
+        prev_frame = frame
 
     video.release()
     return video_path
 
-def create_effect_frame(width, height, effect_type, rms, low_freq, mid_freq, high_freq, sensitivity):
+def create_fractal_frame(width, height, fractal_type, rms, low_freq, mid_freq, high_freq, sensitivity):
     frame = np.zeros((height, width, 3), dtype=np.uint8)
-    if effect_type == "Mandelbrot":
+    if fractal_type == "Mandelbrot":
         frame[:, :] = [int(low_freq * 255), int(mid_freq * 255), int(high_freq * 255)]
-    elif effect_type == "Julia":
+    elif fractal_type == "Julia":
         frame[:, :] = [int(high_freq * 255), int(low_freq * 255), int(mid_freq * 255)]
-    elif effect_type == "Burning Ship":
+    elif fractal_type == "Burning Ship":
         frame[:, :] = [int(mid_freq * 255), int(high_freq * 255), int(low_freq * 255)]
-    elif effect_type == "Sierpinski Carpet":
+    elif fractal_type == "Sierpinski Carpet":
         frame[:, :] = [int((low_freq + mid_freq) * 127), int((mid_freq + high_freq) * 127), int((high_freq + low_freq) * 127)]
-    elif effect_type == "Geometric":
-        frame = create_geometric_effect(width, height, rms, low_freq, mid_freq, high_freq)
-    return frame
-
-def create_geometric_effect(width, height, rms, low_freq, mid_freq, high_freq):
-    frame = np.zeros((height, width, 3), dtype=np.uint8)
-    center = (width // 2, height // 2)
-    radius = int(min(width, height) * 0.4 * rms)
-    cv2.circle(frame, center, radius, (int(low_freq * 255), int(mid_freq * 255), int(high_freq * 255)), -1)
     return frame
 
 # Interfaccia Utente Streamlit
-st.title("Generatore di Video con Effetti")
+st.title("Generatore di Video Frattali")
 uploaded_file = st.file_uploader("Carica un file audio", type=["wav", "mp3"])
-effect_type = st.selectbox("Seleziona il tipo di effetto", ["Mandelbrot", "Julia", "Burning Ship", "Sierpinski Carpet", "Geometric"])
+fractal_type = st.selectbox("Seleziona il tipo di frattale", ["Mandelbrot", "Julia", "Burning Ship", "Sierpinski Carpet"])
 video_format = st.selectbox("Seleziona il formato video", list(VIDEO_FORMATS.keys()))
 width, height = VIDEO_FORMATS[video_format]
 sensitivity = st.slider('Sensibilità Effetti Audio', 0.1, 2.0, 1.0)
@@ -96,7 +111,7 @@ if st.button("Genera Video"):
     if uploaded_file is not None:
         with tempfile.TemporaryDirectory() as temp_dir:
             audio_path = prepare_audio_file(uploaded_file, temp_dir)
-            video_path = generate_video(audio_path, width, height, effect_type, sensitivity)
+            video_path = generate_fractal_video(audio_path, width, height, fractal_type, sensitivity)
 
             with open(video_path, "rb") as video_file:
                 video_bytes = video_file.read()
