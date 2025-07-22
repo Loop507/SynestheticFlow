@@ -26,7 +26,7 @@ def prepare_audio_file(uploaded_file, temp_dir):
 
 def analyze_audio_minimal(audio_path):
     y, sr = librosa.load(audio_path, sr=11025)
-    tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr)
+    tempo, beat_frames = librosa.beat.beat_beat_track(y=y, sr=sr)
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     return y, beat_times, tempo, sr
 
@@ -78,25 +78,27 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
     for y in range(height):
         for x in range(width):
             # Coordinate complesse con zoom e movimento
-            # Reso più esplicito per Numba
-            temp_c_real_base = (x - width / 2.0) / (zoom * width / 4.0) + move_x
-            temp_c_imag_base = (y - height / 2.0) / (zoom * height / 4.0) + move_y
+            # Reso più esplicito per Numba, assicurando che tutti siano float64 fin dall'inizio
+            c_real_base = (float(x) - float(width) / 2.0) / (float(zoom) * float(width) / 4.0) + float(move_x)
+            c_imag_base = (float(y) - float(height) / 2.0) / (float(zoom) * float(height) / 4.0) + float(move_y)
 
             # Aggiunta influenza audio - modulazione sottile
-            # Sostituito np.sin con math.sin e np.cos con math.cos
-            c_real = temp_c_real_base + audio_influence * 0.005 * math.sin(x * 0.001)
-            c_imag = temp_c_imag_base + audio_influence * 0.005 * math.cos(y * 0.001)
+            c_real = c_real_base + audio_influence * 0.005 * math.sin(x * 0.001)
+            c_imag = c_imag_base + audio_influence * 0.005 * math.cos(y * 0.001)
 
-            z_real = 0.0 # Inizializzazione esplicita come float
+            z_real = 0.0
             z_imag = 0.0 # Inizializzazione esplicita come float
             iteration = 0
 
             # Calcolo iterativo
             while iteration < max_iter and (z_real * z_real + z_imag * z_imag) < 4.0:
-                # Esplicitiamo i calcoli intermedi per Numba
-                z_real_squared = z_real * z_real
-                z_imag_squared = z_imag * z_imag
-                two_z_real_z_imag = 2.0 * z_real * z_imag
+                # Esplicitiamo i calcoli intermedi per Numba con variabili temporanee
+                temp_z_real = z_real # Variabile temporanea per z_real
+                temp_z_imag = z_imag # Variabile temporanea per z_imag
+
+                z_real_squared = temp_z_real * temp_z_real
+                z_imag_squared = temp_z_imag * temp_z_imag
+                two_z_real_z_imag = 2.0 * temp_z_real * temp_z_imag
 
                 z_real_new = z_real_squared - z_imag_squared + c_real
                 z_imag = two_z_real_z_imag + c_imag
@@ -144,7 +146,6 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
             else:
                 t = float(iteration) / max_iter
                 # Variazioni di colore psichedeliche
-                # Sostituito np.sin con math.sin
                 b = int(255 * (math.sin(t * 10 + 0) * 0.5 + 0.5))
                 g = int(255 * (math.sin(t * 10 + 2 * math.pi / 3) * 0.5 + 0.5))
                 r = int(255 * (math.sin(t * 10 + 4 * math.pi / 3) * 0.5 + 0.5))
@@ -163,7 +164,6 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
             # Influenza audio
-            # Sostituito np.sin con math.sin e np.cos con math.cos
             c_real += audio_influence * 0.003 * math.sin(x * 0.002 + y * 0.001)
             c_imag += audio_influence * 0.003 * math.cos(x * 0.001 + y * 0.002)
 
@@ -182,7 +182,6 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
                 fractal[y, x] = [0, 0, 0]
             else:
                 t = float(iteration) / max_iter
-                # Sostituito np.sin con math.sin
                 b = int(255 * (math.sin(t * 5 + 0) * 0.5 + 0.5))
                 g = int(255 * (math.sin(t * 5 + 1.5) * 0.5 + 0.5))
                 r = int(255 * (math.sin(t * 5 + 3) * 0.5 + 0.5))
@@ -316,7 +315,6 @@ def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data
 
     # Parametri Julia dinamici
     max_iter = max(50, min(150, int(70 + rms * 80 * movement_scale_factor * bpm_scaled)))
-    # Sostituito np.sin con math.sin e np.cos con math.cos
     c_real_base = -0.7 + np.sin(frame_idx * 0.015 * movement_scale_factor * bpm_scaled) * 0.2
     c_imag_base = 0.27015 + np.cos(frame_idx * 0.01 * movement_scale_factor * bpm_scaled) * 0.15
     zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + high_freq * 2.0 * movement_scale_factor
@@ -341,7 +339,6 @@ def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, fr
 
     max_iter = max(40, min(120, int(60 + rms * 60 * movement_scale_factor * bpm_scaled)))
     zoom = 1.0 + rms * 1.5 * movement_scale_factor * bpm_scaled + mid_freq * 2.0 * movement_scale_factor
-    # Sostituito np.sin con math.sin e np.cos con math.cos
     move_x = -1.8 + np.sin(frame_idx * 0.003 * movement_scale_factor * bpm_scaled) * 0.1
     move_y = -0.08 + np.cos(frame_idx * 0.005 * movement_scale_factor * bpm_scaled) * 0.05
     audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor * bpm_scaled
@@ -478,7 +475,7 @@ with col1:
 
 with col2:
     if use_frequency_colors:
-        st.markdown("**Colori Frequenze:**")
+        st.markdown("**Colore Frequenze:**")
         low_freq_color = st.color_picker("🔴 Frequenze Basse", value="#FF0066") # Rosa vivace
         mid_freq_color = st.color_picker("🟢 Frequenze Medie", value="#00FF88") # Verde acqua
         high_freq_color = st.color_picker("🔵 Frequenze Acute", value="#0066FF") # Blu elettrico
