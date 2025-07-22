@@ -1,9 +1,8 @@
 streamlit>=1.25
 numpy>=1.24
+opencv-python-headless>=4.7
 librosa>=0.10.0
-soundfile>=0.12
-scipy>=1.11
+numba>=0.57
 moviepy>=1.0.3
-opencv-python
-matplotlib
-Pillow
+scipy>=1.11
+soundfile>=0.12
