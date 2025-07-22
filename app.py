@@ -73,12 +73,21 @@ def create_effect_frame(width, height, effect_type, rms, low_freq, mid_freq, hig
         frame[:, :] = [int(mid_freq * 255), int(high_freq * 255), int(low_freq * 255)]
     elif effect_type == "Sierpinski Carpet":
         frame[:, :] = [int((low_freq + mid_freq) * 127), int((mid_freq + high_freq) * 127), int((high_freq + low_freq) * 127)]
+    elif effect_type == "Geometric":
+        frame = create_geometric_effect(width, height, rms, low_freq, mid_freq, high_freq)
+    return frame
+
+def create_geometric_effect(width, height, rms, low_freq, mid_freq, high_freq):
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    center = (width // 2, height // 2)
+    radius = int(min(width, height) * 0.4 * rms)
+    cv2.circle(frame, center, radius, (int(low_freq * 255), int(mid_freq * 255), int(high_freq * 255)), -1)
     return frame
 
 # Interfaccia Utente Streamlit
 st.title("Generatore di Video con Effetti")
 uploaded_file = st.file_uploader("Carica un file audio", type=["wav", "mp3"])
-effect_type = st.selectbox("Seleziona il tipo di effetto", ["Mandelbrot", "Julia", "Burning Ship", "Sierpinski Carpet"])
+effect_type = st.selectbox("Seleziona il tipo di effetto", ["Mandelbrot", "Julia", "Burning Ship", "Sierpinski Carpet", "Geometric"])
 video_format = st.selectbox("Seleziona il formato video", list(VIDEO_FORMATS.keys()))
 width, height = VIDEO_FORMATS[video_format]
 sensitivity = st.slider('Sensibilità Effetti Audio', 0.1, 2.0, 1.0)
@@ -88,8 +97,17 @@ if st.button("Genera Video"):
         with tempfile.TemporaryDirectory() as temp_dir:
             audio_path = prepare_audio_file(uploaded_file, temp_dir)
             video_path = generate_video(audio_path, width, height, effect_type, sensitivity)
+
             with open(video_path, "rb") as video_file:
                 video_bytes = video_file.read()
+
             st.video(video_bytes)
+
+            st.download_button(
+                label="Scarica Video",
+                data=video_bytes,
+                file_name="output_video.mp4",
+                mime="video/mp4"
+            )
     else:
         st.error("Carica un file audio prima di generare il video.")
