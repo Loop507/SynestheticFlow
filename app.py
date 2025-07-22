@@ -7,6 +7,13 @@ import time
 import os
 import subprocess
 
+# --- CONFIGURAZIONI FORMATO ---
+VIDEO_FORMATS = {
+    "16:9 (Landscape) - 1280x720": (1280, 720),
+    "1:1 (Square) - 720x720": (720, 720), 
+    "9:16 (Portrait) - 720x1280": (720, 1280)
+}
+
 # --- FUNZIONI DI SUPPORTO ---
 def prepare_audio_file(uploaded_file, temp_dir):
     audio_path = f"{temp_dir}/input_audio.wav"
@@ -20,8 +27,7 @@ def analyze_audio_minimal(audio_path):
     beat_times = librosa.frames_to_time(beat_frames, sr=sr)
     return y, beat_times, tempo, sr
 
-def get_optimal_settings(duration):
-    width, height = 640, 360
+def get_optimal_settings(duration, width, height):
     fps = 20
     estimated_size = (width * height * fps * duration) / (1024 * 1024)  # rough estimate
     return width, height, fps, int(estimated_size)
@@ -34,16 +40,20 @@ def process_frame_data(audio_chunk):
 def draw_minimal_mandala(frame_img, width, height, rms, param1, param2, beat, freq_data):
     color = (int(min(255, rms * 500)), 50, 150)
     center = (width // 2, height // 2)
-    radius = int(min(height // 3, rms * 150))
+    # Adatta il raggio in base alle dimensioni del frame
+    max_radius = min(width, height) // 6
+    radius = int(min(max_radius, rms * 150))
     cv2.circle(frame_img, center, radius, color, thickness=3 if beat else 1)
     return frame_img
 
 def draw_minimal_waves(frame_img, width, height, rms, param1, frame_idx, beat, freq_data):
     amplitude = int(min(height // 4, rms * 200))
     color = (150, 50, int(min(255, rms * 500)))
-    for x in range(0, width, 20):
+    step = max(10, width // 50)  # Adatta il passo in base alla larghezza
+    for x in range(0, width, step):
         y = int(height / 2 + amplitude * np.sin(0.1 * x + frame_idx * 0.2))
-        cv2.circle(frame_img, (x, y), 5, color, -1)
+        circle_radius = max(2, min(8, width // 160))  # Adatta dimensione cerchi
+        cv2.circle(frame_img, (x, y), circle_radius, color, -1)
     return frame_img
 
 def merge_video_audio(video_path, audio_path, output_path):
@@ -76,7 +86,18 @@ def merge_video_audio(video_path, audio_path, output_path):
 st.title("🎨 **SynestheticFlow**")
 st.markdown("*<span style='font-size: 12px;'>by loop507</span>*", unsafe_allow_html=True)
 
-uploaded_audio = st.file_uploader("Carica file audio", type=["wav", "mp3", "ogg"])
+# Selezione formato video
+st.subheader("📐 Formato Video")
+selected_format = st.selectbox(
+    "Scegli il rapporto di aspetto:",
+    list(VIDEO_FORMATS.keys()),
+    index=0  # Default 16:9
+)
+
+width, height = VIDEO_FORMATS[selected_format]
+st.info(f"📺 Formato selezionato: **{selected_format}** - Risoluzione: {width}x{height}px")
+
+uploaded_audio = st.file_uploader("🎵 Carica file audio", type=["wav", "mp3", "ogg"])
 
 if uploaded_audio:
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -84,7 +105,7 @@ if uploaded_audio:
             audio_path = prepare_audio_file(uploaded_audio, temp_dir)
             y, beat_times, tempo, sr = analyze_audio_minimal(audio_path)
             duration = librosa.get_duration(filename=audio_path)
-            width, height, fps, est_size = get_optimal_settings(duration)
+            width, height, fps, est_size = get_optimal_settings(duration, width, height)
             
             st.info(f"🎼 BPM: {float(tempo):.0f} | ⏱️ {float(duration):.1f}s | 🎮 {fps} FPS | 📆 ~{est_size} MB")
 
@@ -119,7 +140,7 @@ if uploaded_audio:
                     
                     video_writer.write(frame_img)
                     frame_rgb = cv2.cvtColor(frame_img, cv2.COLOR_BGR2RGB)
-                    video_placeholder.image(frame_rgb, channels="RGB")
+                    video_placeholder.image(frame_rgb, channels="RGB", use_column_width=True)
                     
                     # Aggiorna progress bar
                     progress = (frame_idx + 1) / frame_count
@@ -139,10 +160,15 @@ if uploaded_audio:
                     st.success("🎉 Video con audio generato con successo!")
                     with open(video_final, "rb") as f:
                         video_bytes = f.read()
+                    
+                    # Nome file basato sul formato selezionato
+                    format_name = selected_format.split(" ")[0].replace(":", "x")
+                    filename = f"synesthetic_flow_{format_name}_{width}x{height}.mp4"
+                    
                     st.download_button(
                         "⬇️ Scarica Video Completo", 
                         video_bytes, 
-                        file_name="synesthetic_flow_video.mp4", 
+                        file_name=filename, 
                         mime="video/mp4"
                     )
                 else:
@@ -150,10 +176,14 @@ if uploaded_audio:
                     st.info("📹 Scarica il video senza audio:")
                     with open(video_temp, "rb") as f:
                         video_bytes = f.read()
+                    
+                    format_name = selected_format.split(" ")[0].replace(":", "x")
+                    filename = f"synesthetic_flow_{format_name}_{width}x{height}_no_audio.mp4"
+                    
                     st.download_button(
                         "⬇️ Scarica Video (solo visivo)", 
                         video_bytes, 
-                        file_name="synesthetic_flow_video_no_audio.mp4", 
+                        file_name=filename, 
                         mime="video/mp4"
                     )
 
@@ -166,9 +196,15 @@ with st.expander("ℹ️ Informazioni Tecniche"):
     **SynestheticFlow** genera visualizzazioni sincronizzate con l'audio:
     
     - 🎵 **Analisi Audio**: Rileva BPM e beat usando librosa
-    - 🎨 **Visualizzazioni**: Mandala e onde che reagiscono al suono
+    - 🎨 **Visualizzazioni**: Mandala e onde che reagiscono al suono  
+    - 📐 **Formati**: 3 rapporti ottimizzati (16:9, 1:1, 9:16)
     - 🎬 **Sincronizzazione**: 20 FPS per fluidità ottimale
     - 🔊 **Audio**: Incorporato nel video finale via ffmpeg
+    
+    **Formati disponibili**:
+    - **16:9 (Landscape)**: 1280x720px - Ideale per YouTube, monitor widescreen
+    - **1:1 (Square)**: 720x720px - Perfetto per Instagram post
+    - **9:16 (Portrait)**: 720x1280px - Ottimizzato per TikTok, Instagram Stories
     
     **Requisiti**: ffmpeg installato sul sistema per l'audio
     """)
