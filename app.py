@@ -386,10 +386,10 @@ width, height = VIDEO_FORMATS[selected_format]
 st.info(f"📺 Formato selezionato: **{selected_format}** - Risoluzione: {width}x{height}px")
 
 # --- CONTROLLI FRATTALI ---
-st.subheader("🌀 Tipo di Frattale")
+st.subheader("🌀 Tipo di Effetto") # Modificato qui
 
 fractal_type = st.selectbox(
-    "Seleziona il frattale da generare:",
+    "Seleziona l'effetto da generare:", # Modificato qui
     [
         "🌀 Mandelbrot Set - Classico e ipnotico",
         "🔥 Julia Set - Dinamico e fluido", 
