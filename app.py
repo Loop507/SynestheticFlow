@@ -199,24 +199,26 @@ def _remove_squares_numba(arr, level, x, y, size, fill_color):
             if i != 1 or j != 1:  # Salta il quadrato centrale
                 _remove_squares_numba(arr, level-1, x + i*third, y + j*third, third, fill_color)
 
-def generate_sierpinski_carpet(width, height, iterations, audio_scale, base_color_bgr):
-    """Genera il tappeto di Sierpinski con influenza audio"""
+def generate_sierpinski_carpet(width, height, iterations, audio_scale, base_color_bgr, rotation_angle=0):
+    """Genera il tappeto di Sierpinski con influenza audio e rotazione"""
     size = min(width, height)
-    # Inizia con un colore di base che verrà poi modulato
     carpet = np.full((size, size, 3), base_color_bgr, dtype=np.uint8)
 
-    # Numero di iterazioni basato sull'audio
-    # Limita le iterazioni per evitare calcoli troppo lunghi o immagini vuote
-    iter_count = max(1, min(6, int(iterations + audio_scale * 2))) # Calibra audio_scale
+    iter_count = max(1, min(6, int(iterations + audio_scale * 2)))
 
-    # Colore "vuoto" (nero) per i fori
-    _remove_squares_numba(carpet, iter_count, 0, 0, size, (0,0,0)) # Passa il colore di riempimento
+    _remove_squares_numba(carpet, iter_count, 0, 0, size, (0,0,0))
 
-    # Ridimensiona il tappeto per adattarlo al frame
-    # OpenCV resize è in BGR per default
+    # Applica rotazione prima del resize
+    if rotation_angle != 0:
+        center = (size / 2, size / 2)
+        M = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
+        carpet = cv2.warpAffine(carpet, M, (size, size), flags=cv2.INTER_LINEAR, borderValue=base_color_bgr)
+
+
     fractal = cv2.resize(carpet, (width, height), interpolation=cv2.INTER_AREA)
 
     return fractal
+
 
 def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings):
     """Applica colori basati sulle frequenze al frattale esistente"""
@@ -230,117 +232,181 @@ def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, co
     high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']))
 
     # Normalizza le influenze delle frequenze per il blending
-    # Usa np.clip per assicurarsi che i valori rimangano tra 0 e 1
-    low_intensity = np.clip(low_freq * 5.0, 0.0, 1.0) # Moltiplicatore calibrato
-    mid_intensity = np.clip(mid_freq * 5.0, 0.0, 1.0)
-    high_intensity = np.clip(high_freq * 5.0, 0.0, 1.0)
+    low_intensity = np.clip(low_freq * 7.0, 0.0, 1.0) # Moltiplicatore calibrato, più sensibile
+    mid_intensity = np.clip(mid_freq * 7.0, 0.0, 1.0)
+    high_intensity = np.clip(high_freq * 7.0, 0.0, 1.0)
 
-    # Crea un colore base mescolando i colori delle frequenze
-    # Questa parte applica un colore generale che reagisce all'audio
     mixed_frequency_color = (
         low_bgr * low_intensity +
         mid_bgr * mid_intensity +
         high_bgr * high_intensity
     )
-    mixed_frequency_color = np.clip(mixed_frequency_color / (low_intensity + mid_intensity + high_intensity + 1e-6), 0, 255) # Normalizza e clippa
+    mixed_frequency_color = np.clip(mixed_frequency_color / (low_intensity + mid_intensity + high_intensity + 1e-6), 0, 255)
 
-    # Applica il colore misto ai pixel del frattale che non sono neri (o colore di sfondo)
-    # In questo modo, i colori delle frequenze "infondono" il frattale
-    # Solo i pixel del frattale (non il "vuoto" o lo sfondo) vengono colorati
-    mask = np.any(colored_fractal != [0,0,0], axis=-1) # Maschera per i pixel non neri del frattale
+    mask = np.any(colored_fractal != [0,0,0], axis=-1)
 
-    # Modula il colore del frattale con il colore misto delle frequenze
-    # Un semplice blending o moltiplicazione può dare effetti interessanti
-    # Qui usiamo una moltiplicazione per "tingere" il frattale
-    for c in range(3): # Per ogni canale di colore B, G, R
-        colored_fractal[mask, c] = np.clip(colored_fractal[mask, c] * (mixed_frequency_color[c] / 255.0) * 1.5, 0, 255) # Moltiplica e satura
+    for c in range(3):
+        colored_fractal[mask, c] = np.clip(colored_fractal[mask, c] * (mixed_frequency_color[c] / 255.0) * 1.8, 0, 255) # Moltiplica e satura
 
     return colored_fractal
 
 # --- FUNZIONI DI DISEGNO FRATTALE PER IL PROCESSING ---
 
 def draw_mandelbrot_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
-    """Disegna frattale di Mandelbrot reattivo all'audio"""
+    """Disegna frattale di Mandelbrot reattivo all'audio con movimenti migliorati"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    # Parametri dinamici basati sull'audio
-    max_iter = max(50, min(200, int(80 + rms * 150 * movement_scale_factor))) # Più iterazioni per più dettaglio
-    zoom = 1.5 + rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor # Zoom più sensibile
-    move_x = np.sin(frame_idx * 0.005 * movement_scale_factor) * 0.2 - 0.75 + mid_freq * 0.1 * movement_scale_factor # Movimento più lento e posizionato
-    move_y = np.cos(frame_idx * 0.007 * movement_scale_factor) * 0.2 + 0.05 + high_freq * 0.08 * movement_scale_factor
-    audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
+    # Movimenti costanti e modulati dall'audio e da movement_scale_factor
+    time_factor = frame_idx * 0.001 * movement_scale_factor # Velocità base del movimento
+    
+    # "Pulse" effect sul beat
+    beat_pulse_zoom = 0.5 if beat else 0 # Zoom aggiuntivo sul beat
+    beat_pulse_iter = 50 if beat else 0 # Iterazioni aggiuntive sul beat
 
+    max_iter = max(50, min(250, int(80 + rms * 180 * movement_scale_factor + beat_pulse_iter)))
+    
+    # Movimenti più complessi e fluidi
+    zoom = (1.5 + rms * 6 * movement_scale_factor + low_freq * 12 * movement_scale_factor + 
+            np.sin(time_factor * 2.5) * 0.3 * movement_scale_factor + beat_pulse_zoom) 
+    
+    move_x = (-0.75 + np.sin(time_factor * 1.5) * 0.25 * movement_scale_factor + # Movimento sinusoidale costante
+              mid_freq * 0.15 * movement_scale_factor) # Modulazione audio
+    
+    move_y = (0.05 + np.cos(time_factor * 1.8) * 0.2 * movement_scale_factor + # Movimento sinusoidale costante
+              high_freq * 0.12 * movement_scale_factor) # Modulazione audio
+    
+    audio_influence = (rms * 2.5 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
+    
     fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
+
+    # Color flash sul beat
+    if beat and color_settings['use_frequency_colors']:
+        flash_color_bgr = np.array(hex_to_bgr("#FFFFFF")) # Bianco o colore vibrante
+        # Aumenta l'intensità del flash con l'RMS
+        flash_intensity = np.clip(rms * 5.0, 0.2, 0.8) # Tra 20% e 80% di blending
+        cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
+
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
+        
     alpha = 0.8 if beat else 0.65 # Blending più forte sul beat
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-
+    
     return frame_img
 
 def draw_julia_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
-    """Disegna frattale di Julia reattivo all'audio"""
+    """Disegna frattale di Julia reattivo all'audio con movimenti migliorati"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    # Parametri Julia dinamici
-    max_iter = max(50, min(150, int(70 + rms * 80 * movement_scale_factor)))
-    # Variazione dei parametri C per Julia per effetti psichedelici
-    c_real_base = -0.7 + np.sin(frame_idx * 0.015 * movement_scale_factor) * 0.2
-    c_imag_base = 0.27015 + np.cos(frame_idx * 0.01 * movement_scale_factor) * 0.15
-    zoom = 1.0 + rms * 1.5 * movement_scale_factor + high_freq * 2.0 * movement_scale_factor
-    audio_mod = (rms * 1.5 + (low_freq * 0.5 + mid_freq * 0.8 + high_freq * 0.2)) * movement_scale_factor # Modulazione combinata
+    time_factor = frame_idx * 0.0012 * movement_scale_factor # Velocità base del movimento
+
+    # "Pulse" effect sul beat
+    beat_pulse_mod = 0.1 if beat else 0 # Modifica aggiuntiva sui parametri C
+    beat_pulse_zoom = 0.8 if beat else 0 # Zoom aggiuntivo sul beat
+
+    max_iter = max(50, min(180, int(70 + rms * 100 * movement_scale_factor)))
+
+    # Variazione dei parametri C per Julia per effetti psichedelici e movimenti fluidi
+    c_real_base = (-0.7 + np.sin(time_factor * 2.0) * 0.25 * movement_scale_factor +
+                   rms * 0.08 * movement_scale_factor + beat_pulse_mod)
+    c_imag_base = (0.27015 + np.cos(time_factor * 2.2) * 0.2 * movement_scale_factor +
+                   rms * 0.06 * movement_scale_factor + beat_pulse_mod)
+
+    zoom = (1.0 + rms * 2.0 * movement_scale_factor + high_freq * 2.5 * movement_scale_factor +
+            np.sin(time_factor * 1.0) * 0.5 * movement_scale_factor + beat_pulse_zoom) # Zoom più dinamico
+
+    audio_mod = (rms * 1.8 + (low_freq * 0.6 + mid_freq * 1.0 + high_freq * 0.4)) * movement_scale_factor # Modulazione combinata
 
     fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
 
+    # Color flash sul beat
+    if beat and color_settings['use_frequency_colors']:
+        flash_color_bgr = np.array(hex_to_bgr("#FFC0CB")) # Rosa chiaro o colore vivace
+        flash_intensity = np.clip(rms * 4.0, 0.2, 0.7)
+        cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
+
+
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
+        
     alpha = 0.9 if beat else 0.75 # Blending più intenso
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-
+    
     return frame_img
 
 def draw_burning_ship_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
-    """Disegna frattale Burning Ship"""
+    """Disegna frattale Burning Ship con movimenti migliorati"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    max_iter = max(40, min(120, int(60 + rms * 60 * movement_scale_factor)))
-    zoom = 1.0 + rms * 1.5 * movement_scale_factor + mid_freq * 2.0 * movement_scale_factor
-    move_x = -1.8 + np.sin(frame_idx * 0.003 * movement_scale_factor) * 0.1
-    move_y = -0.08 + np.cos(frame_idx * 0.005 * movement_scale_factor) * 0.05
-    audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor
+    time_factor = frame_idx * 0.0008 * movement_scale_factor # Velocità base del movimento
+
+    # "Pulse" effect sul beat
+    beat_pulse_zoom = 0.4 if beat else 0
+    beat_pulse_iter = 30 if beat else 0
+
+    max_iter = max(40, min(150, int(60 + rms * 80 * movement_scale_factor + beat_pulse_iter)))
+    
+    zoom = (1.0 + rms * 1.8 * movement_scale_factor + mid_freq * 2.5 * movement_scale_factor +
+            np.cos(time_factor * 1.5) * 0.4 * movement_scale_factor + beat_pulse_zoom)
+    
+    move_x = (-1.8 + np.sin(time_factor * 1.0) * 0.15 * movement_scale_factor + # Movimento costante
+              rms * 0.05 * movement_scale_factor)
+    
+    move_y = (-0.08 + np.cos(time_factor * 1.2) * 0.1 * movement_scale_factor + # Movimento costante
+              low_freq * 0.03 * movement_scale_factor)
+    
+    audio_influence = (rms * 1.5 + high_freq * 0.8) * movement_scale_factor
 
     fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
 
+    # Color flash sul beat
+    if beat and color_settings['use_frequency_colors']:
+        flash_color_bgr = np.array(hex_to_bgr("#FFD700")) # Oro o colore acceso
+        flash_intensity = np.clip(rms * 4.5, 0.2, 0.8)
+        cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
+
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
+        
     alpha = 0.85 if beat else 0.7 # Leggermente più opaco
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-
+    
     return frame_img
 
 def draw_sierpinski_fractal(frame_img, width, height, rms, frame_idx, beat, freq_data, color_settings, movement_scale_factor):
-    """Disegna tappeto di Sierpinski"""
+    """Disegna tappeto di Sierpinski con movimenti migliorati"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
 
-    # Aumenta la sensibilità delle iterazioni all'audio per un effetto più evidente
-    iterations = 3 + int(rms * 3 * movement_scale_factor) + int(low_freq * 2 * movement_scale_factor)
+    time_factor = frame_idx * 0.0005 * movement_scale_factor # Velocità base del movimento
+
+    # "Pulse" effect sul beat
+    beat_pulse_iter = 1 if beat else 0 # Iterazioni aggiuntive sul beat
+    beat_pulse_rot = 5 if beat else 0 # Rotazione aggiuntiva sul beat
+
+    iterations = 3 + int(rms * 4 * movement_scale_factor) + int(low_freq * 3 * movement_scale_factor) + beat_pulse_iter
     audio_scale = (rms + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
 
-    # Il colore di base del tappeto (prima della modulazione per frequenze)
-    base_carpet_color_bgr = hex_to_bgr(color_settings['background_color']) # Usa il colore di sfondo o un colore predefinito
+    # Rotazione costante e modulata
+    rotation_angle = (np.sin(time_factor * 0.8) * 10 * movement_scale_factor + # Rotazione lenta
+                      high_freq * 20 * movement_scale_factor + beat_pulse_rot) # Modulata da audio e beat
 
-    fractal = generate_sierpinski_carpet(width, height, iterations, audio_scale, base_carpet_color_bgr)
+    base_carpet_color_bgr = hex_to_bgr(color_settings['background_color'])
+
+    fractal = generate_sierpinski_carpet(width, height, iterations, audio_scale, base_carpet_color_bgr, rotation_angle=rotation_angle)
+
+    # Color flash sul beat
+    if beat and color_settings['use_frequency_colors']:
+        flash_color_bgr = np.array(hex_to_bgr("#9400D3")) # Viola profondo o colore contrastante
+        flash_intensity = np.clip(rms * 3.5, 0.2, 0.7)
+        cv2.addWeighted(fractal, 1 - flash_intensity, flash_color_bgr, flash_intensity, 0, fractal)
 
     if color_settings['use_frequency_colors']:
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
+        
     alpha = 0.75 if beat else 0.6 # Blending per Sierpinski
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-
+    
     return frame_img
 
 # --- FUNZIONI DI MERGE VIDEO/AUDIO ---
@@ -356,14 +422,14 @@ def merge_video_audio(video_path, audio_path, output_path):
             '-shortest',       # termina quando finisce il più corto
             output_path
         ]
-
+        
         result = subprocess.run(cmd, capture_output=True, text=True)
-
+        
         if result.returncode == 0:
             return True, "Merge completato con successo"
         else:
             return False, f"Errore ffmpeg: {result.stderr}"
-
+            
     except FileNotFoundError:
         return False, "ffmpeg non trovato. Installa ffmpeg sul sistema."
     except Exception as e:
@@ -386,10 +452,10 @@ width, height = VIDEO_FORMATS[selected_format]
 st.info(f"📺 Formato selezionato: **{selected_format}** - Risoluzione: {width}x{height}px")
 
 # --- CONTROLLI FRATTALI ---
-st.subheader("🌀 Tipo di Effetto") # Modificato qui
+st.subheader("🌀 Tipo di Effetto")
 
 fractal_type = st.selectbox(
-    "Seleziona l'effetto da generare:", # Modificato qui
+    "Seleziona l'effetto da generare:",
     [
         "🌀 Mandelbrot Set - Classico e ipnotico",
         "🔥 Julia Set - Dinamico e fluido",
@@ -399,7 +465,7 @@ fractal_type = st.selectbox(
     index=0
 )
 
-# --- CONTROLLI MOVIMENTO EFFETTI ---
+# --- CONTROLLI MOVIMENTO EFFETTI (REINTRODOTTO) ---
 st.subheader("⚙️ Intensità Movimento Effetti")
 movement_intensity = st.selectbox(
     "Seleziona l'intensità del movimento degli effetti:",
@@ -414,6 +480,7 @@ movement_scale_factors = {
     "Hard": 1.5
 }
 current_movement_scale_factor = movement_scale_factors[movement_intensity]
+
 
 # --- CONTROLLI COLORI ---
 st.subheader("🎨 Controlli Colori")
@@ -514,7 +581,7 @@ if uploaded_audio:
                         video_bytes = f.read()
 
                     format_name = selected_format.split(" ")[0].replace(":", "x")
-                    fractal_name = fractal_type.split(" ")[1].lower() # Ora non c'è il mix
+                    fractal_name = fractal_type.split(" ")[1].lower()
                     filename = f"fractal_{fractal_name}_{format_name}_{width}x{height}.mp4"
 
                     st.download_button(
@@ -560,11 +627,6 @@ with st.expander("🌌 Informazioni Frattali"):
     - **Frequenze Medie**: Controllano movimento verticale e dettagli.
     - **Frequenze Acute**: Modulano zoom e distorsioni.
     - **Beat Detection**: Intensifica colori e blending durante i colpi ritmici.
-
-    **⚙️ Intensità Movimento Effetti:**
-    - **Soft**: Movimenti più lenti e sottili.
-    - **Medium**: Movimenti bilanciati e reattivi.
-    - **Hard**: Movimenti rapidi e marcati per un effetto più psichedelico.
 
     **⚡ Ottimizzazioni:**
     - Algoritmi compilati con Numba per performance superiori.
