@@ -229,6 +229,43 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
 
 # (La funzione burning_ship_numba e draw_burning_ship_fractal_bpm_sync
 # sono state mantenute nel codice ma non sono più selezionabili nell'UI)
+@jit(nopython=True)
+def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence):
+    """Genera il frattale Burning Ship (Numba ottimizzato)"""
+    fractal = np.zeros((height, width, 3), dtype=np.uint8)
+
+    for y in range(height):
+        for x in range(width):
+            c_real = (x - width/2) / (zoom * width/4) + move_x
+            c_imag = (y - height/2) / (zoom * height/4) + move_y
+
+            # Influenza audio
+            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
+            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
+
+            z_real = 0.0
+            z_imag = 0.0
+            iteration = 0
+
+            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
+                # La differenza chiave: valori assoluti
+                z_real_new = z_real*z_real - z_imag*z_imag + c_real
+                z_imag = 2.0 * abs(z_real) * abs(z_imag) + c_imag
+                z_real = z_real_new
+                iteration += 1
+
+            # Colori fiammeggianti dinamici
+            if iteration == max_iter:
+                fractal[y, x] = np.array([0, 0, 0], dtype=np.uint8)
+            else:
+                t = iteration / max_iter
+                b = int(255 * (np.sin(t * 5 + 0) * 0.5 + 0.5))
+                g = int(255 * (np.sin(t * 5 + 1.5) * 0.5 + 0.5))
+                r = int(255 * (np.sin(t * 5 + 3) * 0.5 + 0.5))
+                fractal[y, x] = np.array([b, g, r], dtype=np.uint8)
+
+    return fractal
+
 
 @jit(nopython=True)
 def _remove_squares_numba(arr, level, x, y, size, fill_color_b, fill_color_g, fill_color_r):
@@ -505,11 +542,10 @@ def draw_sierpinski_fractal_bpm_sync(frame_img, width, height, rms, current_time
     
     return frame_img
 
-# --- NUOVA FUNZIONE PER PATTERN GEOMETRICO (da implementare) ---
+# --- NUOVA FUNZIONE PER PATTERN GEOMETRICO (ora più dinamica) ---
 def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
     """
-    Genera un pattern geometrico reattivo all'audio e ai BPM.
-    Questo è uno scheletro iniziale, da espandere per creare effetti più complessi.
+    Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni.
     """
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
@@ -519,70 +555,124 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    # Esempio Semplice: Disegna una griglia di quadrati che cambiano dimensione e colore
-    cell_size_base = 50 
-    
-    # Modulazione della dimensione della cella con RMS e BPM
-    # Aumentata la reattività qui
-    cell_size_mod_audio = effective_rms * 40 + effective_low_freq * 60 
-    cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 20
-    
+    # Determinare il "modo" del pattern basato su beat_intensity e tempo
+    # Aumentiamo la sensibilità per un cambio più frequente
+    pattern_mode = 0
+    if is_on_beat and beat_intensity > 0.6: # Beat forte
+        pattern_mode = (int(current_time * 2) % 3) + 1 # Passa a modalità 1, 2 o 3 al beat
+    elif effective_low_freq > 0.15: # Basse frequenze dominanti
+        pattern_mode = 1
+    elif effective_mid_freq > 0.15: # Medie frequenze dominanti
+        pattern_mode = 2
+    elif effective_high_freq > 0.15: # Alte frequenze dominanti
+        pattern_mode = 3
+    else: # Nessuna frequenza dominante / tra i beat
+        pattern_mode = 0
+
+    # Dimensioni delle celle e spessore del bordo
+    cell_size_base = 60
+    border_thickness_base = 2
+
+    # Modulazione della dimensione della cella con RMS e BPM (più pronunciata)
+    cell_size_mod_audio = effective_rms * 50 + effective_low_freq * 80 
+    cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 30
     current_cell_size = int(cell_size_base + cell_size_mod_audio + cell_size_mod_bpm)
-    current_cell_size = max(10, min(150, current_cell_size)) # Limiti per evitare dimensioni estreme
+    current_cell_size = max(10, min(180, current_cell_size)) # Limiti più ampi per un maggiore dinamismo
 
-    # Colori reattivi alle frequenze o al beat
-    if color_settings['use_frequency_colors']:
-        color_low = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
-        color_mid = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
-        color_high = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
+    # Modulazione dello spessore del bordo
+    border_thickness_mod = effective_rms * 5 + beat_intensity * bmp_settings['beat_response_intensity'] * 5
+    current_border_thickness = int(border_thickness_base + border_thickness_mod)
+    current_border_thickness = max(1, min(15, current_border_thickness))
 
-        # Miscela i colori in base all'intensità delle frequenze
-        mixed_color = (
-            color_low * effective_low_freq * 3.0 +
-            color_mid * effective_mid_freq * 3.0 +
-            color_high * effective_high_freq * 3.0
-        )
-        mixed_color = np.clip(mixed_color, 0, 255).astype(np.uint8)
-        fill_color = tuple(mixed_color.tolist())
-    else:
-        # Colore di default o reattivo solo al beat
-        base_color = hex_to_bgr("#FFFFFF") # Bianco
-        beat_color_mod = (np.sin(phase * 2) * beat_intensity * bmp_settings['beat_response_intensity'] * 100)
-        fill_color = (
-            min(255, max(0, int(base_color[0] + beat_color_mod))),
-            min(255, max(0, int(base_color[1] + beat_color_mod))),
-            min(255, max(0, int(base_color[2] + beat_color_mod)))
-        )
+
+    # Colori reattivi alle frequenze
+    base_fill_color = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
     
-    # Disegna le forme
+    low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
+    mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
+    high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
+
+    # Calcola il colore in base alle frequenze con maggiore influenza
+    mixed_color = (
+        low_bgr * effective_low_freq * 4.0 +
+        mid_bgr * effective_mid_freq * 4.0 +
+        high_bgr * effective_high_freq * 4.0
+    )
+    mixed_color = np.clip(mixed_color + base_fill_color * 0.5, 0, 255).astype(np.uint8) # Blend con sfondo
+    fill_color = tuple(mixed_color.tolist())
+    
+    # Colore del bordo (può essere lo stesso o diverso)
+    border_color = tuple(np.clip(255 - mixed_color, 0, 255).tolist()) # Complementare o fisso
+
+    # Effetto "glitch" o "flash" sul beat
+    if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
+        flash_color = tuple(np.array([255,255,255]) - np.array(fill_color) / 2) # Colore leggermente contrastante
+        cv2.rectangle(frame_img, (0,0), (width, height), flash_color, -1) # Flash l'intero schermo
+        
+    # Disegna le forme in base al "pattern_mode"
     for y in range(0, height, current_cell_size):
         for x in range(0, width, current_cell_size):
-            # Posizione e dimensione del "quadrato"
-            x1 = x
-            y1 = y
-            x2 = x + current_cell_size
-            y2 = y + current_cell_size
+            x1, y1 = x, y
+            x2, y2 = x + current_cell_size, y + current_cell_size
+            
+            # Centro della cella
+            cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2
+            
+            # Offset per movimento subtile
+            offset_x = int(np.sin(current_time * 5 + x * 0.01) * effective_rms * 20)
+            offset_y = int(np.cos(current_time * 5 + y * 0.01) * effective_rms * 20)
 
-            # Variazione della forma in base al tempo o all'audio
-            shape_type_seed = (x // current_cell_size + y // current_cell_size + int(current_time * 5)) % 3
+            draw_shape = True
+            
+            if pattern_mode == 0: # Griglia di quadrati e cerchi con dimensione dinamica
+                if (x // current_cell_size + y // current_cell_size) % 2 == 0:
+                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), fill_color, -1)
+                    if current_border_thickness > 0:
+                        cv2.rectangle(frame_img, (x1, y1), (x2, y2), border_color, current_border_thickness)
+                else:
+                    cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, fill_color, -1)
+                    if current_border_thickness > 0:
+                        cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, border_color, current_border_thickness)
 
-            if shape_type_seed == 0: # Quadrato
-                cv2.rectangle(frame_img, (x1, y1), (x2, y2), fill_color, -1)
-            elif shape_type_seed == 1: # Cerchio
-                center = (x1 + current_cell_size // 2, y1 + current_cell_size // 2)
-                radius = current_cell_size // 2 - 2
-                cv2.circle(frame_img, center, radius, fill_color, -1)
-            else: # Triangolo (semplice, punta in alto)
-                pts = np.array([
-                    [x1 + current_cell_size // 2, y1], 
-                    [x1, y2], 
-                    [x2, y2]
-                ], np.int32)
-                pts = pts.reshape((-1, 1, 2))
-                cv2.fillPoly(frame_img, [pts], fill_color)
+            elif pattern_mode == 1: # Triangoli che si alternano con il beat
+                if is_on_beat and beat_intensity > 0.5:
+                    pts = np.array([
+                        [x1 + current_cell_size // 2, y1], 
+                        [x1, y2], 
+                        [x2, y2]
+                    ], np.int32)
+                    cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], fill_color)
+                else: # Quando non c'è beat, disegna quadrati
+                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), fill_color, -1)
+
+            elif pattern_mode == 2: # Cerchi che si espandono/contraggono e si trasformano in quadrati sul beat
+                if is_on_beat and beat_intensity > 0.6:
+                    # Diventa un quadrato che "pulsa"
+                    pulse_size = int(current_cell_size * (1 + beat_intensity * 0.5))
+                    px1, py1 = cx - pulse_size // 2, cy - pulse_size // 2
+                    px2, py2 = cx + pulse_size // 2, cy + pulse_size // 2
+                    cv2.rectangle(frame_img, (px1, py1), (px2, py2), fill_color, -1)
+                else:
+                    # Cerchi con raggio variabile
+                    radius_mod = int(np.sin(current_time * 8 + x * 0.05 + y * 0.05) * (effective_rms * 10))
+                    cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness + radius_mod, fill_color, -1)
+                    if current_border_thickness > 0:
+                        cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness + radius_mod, border_color, current_border_thickness)
+            
+            elif pattern_mode == 3: # Pattern più complesso con linee e forme che si spostano
+                # Linee diagonali alternate
+                if (x // current_cell_size) % 2 == 0:
+                    cv2.line(frame_img, (x1 + offset_x, y1 + offset_y), (x2 + offset_x, y2 + offset_y), fill_color, current_border_thickness)
+                else:
+                    cv2.line(frame_img, (x1 + offset_x, y2 + offset_y), (x2 + offset_x, y1 + offset_y), fill_color, current_border_thickness)
+                
+                # Piccoli cerchi al centro delle celle sul beat
+                if is_on_beat and beat_intensity > 0.5:
+                    cv2.circle(frame_img, (cx, cy), int(current_cell_size * 0.2 * beat_intensity), fill_color, -1)
+
 
     # Alpha blending per questo layer (reattivo come i frattali)
-    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0)) 
+    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.35 if bmp_settings['enabled'] else 0)) 
     geometric_pattern_layer = frame_img.copy() # Copia il frame con il pattern
     cv2.addWeighted(frame_img, 1-alpha, geometric_pattern_layer, alpha, 0, frame_img)
 
