@@ -468,6 +468,154 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
     return frame_img
 
+# --- NUOVA FUNZIONE PER EFFETTI POST-PRODUZIONE ---
+def apply_post_processing_effects(frame_img, width, height, rms, current_time, bpm_settings, post_fx_settings, effective_rms, phase, beat_intensity):
+    """
+    Applica effetti di post-produzione all'intero frame.
+    """
+    frame_copy = frame_img.copy() # Lavoriamo su una copia per non modificare l'originale durante le manipolazioni.
+
+    # 1. Effetto Glitch
+    if post_fx_settings['glitch_enabled'] and random.random() < post_fx_settings['glitch_frequency'] * (0.01 + effective_rms * 0.1 + (beat_intensity * 0.1 if bpm_settings['enabled'] else 0)):
+        glitch_intensity = post_fx_settings['glitch_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+        block_size = max(10, int(post_fx_settings['glitch_block_size'] * (1 + effective_rms * 0.5)))
+        color_shift = post_fx_settings['glitch_color_shift'] * (1 + effective_rms * 1.5)
+        
+        for _ in range(int(glitch_intensity * 5)): # Più glitch_intensity = più iterazioni
+            x = random.randint(0, width - block_size)
+            y = random.randint(0, height - block_size)
+            
+            w = random.randint(block_size // 2, block_size)
+            h = random.randint(block_size // 2, block_size)
+            
+            # Sposta il blocco
+            dx = random.randint(-int(glitch_intensity * 20), int(glitch_intensity * 20))
+            dy = random.randint(-int(glitch_intensity * 20), int(glitch_intensity * 20))
+            
+            x_target = np.clip(x + dx, 0, width - w)
+            y_target = np.clip(y + dy, 0, height - h)
+
+            if x < width and y < height and w > 0 and h > 0:
+                block = frame_copy[y:y+h, x:x+w].copy()
+                
+                # Applica color shift se abilitato
+                if color_shift > 0:
+                    b, g, r = cv2.split(block)
+                    if random.random() < 0.33: # Sposta canale blu
+                        b = np.roll(b, int(color_shift), axis=random.choice([0,1]))
+                    elif random.random() < 0.66: # Sposta canale verde
+                        g = np.roll(g, int(color_shift), axis=random.choice([0,1]))
+                    else: # Sposta canale rosso
+                        r = np.roll(r, int(color_shift), axis=random.choice([0,1]))
+                    block = cv2.merge([b,g,r])
+                
+                # Sovrascrivi il blocco nella nuova posizione
+                frame_img[y_target:y_target+h, x_target:x_target+w] = block
+    
+    # 2. Effetto Distorsione Lente/Onda
+    if post_fx_settings['distortion_enabled']:
+        distortion_intensity = post_fx_settings['distortion_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+        wave_frequency = post_fx_settings['distortion_wave_frequency'] * (1 + effective_rms)
+
+        map_x = np.zeros((height, width), np.float32)
+        map_y = np.zeros((height, width), np.float32)
+
+        center_x, center_y = width / 2, height / 2
+
+        for y in range(height):
+            for x in range(width):
+                # Distorsione radiale (lente)
+                dx, dy = x - center_x, y - center_y
+                distance = np.sqrt(dx*dx + dy*dy)
+                
+                # Effetto ondulato basato sul tempo
+                angle = np.arctan2(dy, dx)
+                wave_offset = np.sin(distance * 0.01 + current_time * wave_frequency) * distortion_intensity * 0.1
+                
+                # Combine radial distortion with wave
+                # Aumentato il fattore per una distorsione più visibile
+                scale_factor = 1.0 + wave_offset + distortion_intensity * 0.0005 * distance 
+                
+                map_x[y, x] = center_x + dx * scale_factor
+                map_y[y, x] = center_y + dy * scale_factor
+        
+        frame_img = cv2.remap(frame_img, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
+    # 3. Effetto Saturazione
+    if post_fx_settings['saturation_enabled']:
+        saturation_scale = post_fx_settings['saturation_scale'] * (1 + effective_rms * 0.5 + (beat_intensity * 0.5 if bpm_settings['enabled'] else 0))
+        
+        hsv_frame = cv2.cvtColor(frame_img, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv_frame)
+        
+        s = np.clip(s * saturation_scale, 0, 255).astype(np.uint8)
+        
+        hsv_frame = cv2.merge([h, s, v])
+        frame_img = cv2.cvtColor(hsv_frame, cv2.COLOR_HSV2BGR)
+
+    # 4. Effetto Pixel Corrotti (Pixelizzazione)
+    if post_fx_settings['pixel_corruption_enabled'] and random.random() < (0.05 + effective_rms * 0.1 + (beat_intensity * 0.1 if bpm_settings['enabled'] else 0)):
+        corruption_intensity = post_fx_settings['pixel_corruption_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+        pixel_size = max(1, int(post_fx_settings['pixel_corruption_size'] * (1 + effective_rms * 0.5)))
+        
+        if pixel_size > 1 and corruption_intensity > 0.1:
+            # Crea un'immagine temporanea ridimensionata
+            temp_width = max(1, width // pixel_size)
+            temp_height = max(1, height // pixel_size)
+            
+            # Pixelizza solo una parte del frame per un effetto più "corrotto"
+            # o l'intero frame a seconda dell'intensità
+            if random.random() < corruption_intensity:
+                # Pixelizza l'intero frame
+                temp_frame = cv2.resize(frame_img, (temp_width, temp_height), interpolation=cv2.INTER_LINEAR)
+                frame_img = cv2.resize(temp_frame, (width, height), interpolation=cv2.INTER_NEAREST)
+            else:
+                # Pixelizza solo una regione casuale
+                region_x = random.randint(0, width - int(width * 0.5))
+                region_y = random.randint(0, height - int(height * 0.5))
+                region_w = random.randint(int(width * 0.2), int(width * 0.5))
+                region_h = random.randint(int(height * 0.2), int(height * 0.5))
+
+                region = frame_img[region_y:region_y+region_h, region_x:region_x+region_w]
+                
+                if region.shape[0] > 0 and region.shape[1] > 0:
+                    temp_region = cv2.resize(region, (max(1, region.shape[1] // pixel_size), max(1, region.shape[0] // pixel_size)), interpolation=cv2.INTER_LINEAR)
+                    pixelated_region = cv2.resize(temp_region, (region.shape[1], region.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    frame_img[region_y:region_y+region_h, region_x:region_x+region_w] = pixelated_region
+
+
+    # 5. Effetto Aberrazione Cromatica
+    if post_fx_settings['chromatic_aberration_enabled']:
+        aberration_intensity = post_fx_settings['chromatic_aberration_intensity'] * (1 + effective_rms * 1.5 + (beat_intensity * 2 if bpm_settings['enabled'] else 0))
+        
+        if aberration_intensity > 0.1:
+            b, g, r = cv2.split(frame_img)
+            
+            # Spostamento per i canali
+            shift_x_r = int(np.sin(current_time * 2.1) * aberration_intensity * 2) # Freq leggermente diverse
+            shift_y_r = int(np.cos(current_time * 2.3) * aberration_intensity * 2)
+            
+            shift_x_g = int(np.sin(current_time * 2.2) * aberration_intensity * 1.5)
+            shift_y_g = int(np.cos(current_time * 2.0) * aberration_intensity * 1.5)
+
+            shift_x_b = int(np.sin(current_time * 2.0) * aberration_intensity * 1)
+            shift_y_b = int(np.cos(current_time * 2.2) * aberration_intensity * 1)
+            
+            # Creare matrici di trasformazione per ogni canale
+            M_r = np.float32([[1, 0, shift_x_r], [0, 1, shift_y_r]])
+            M_g = np.float32([[1, 0, shift_x_g], [0, 1, shift_y_g]])
+            M_b = np.float32([[1, 0, shift_x_b], [0, 1, shift_y_b]])
+            
+            # Applicare la trasformazione a ogni canale
+            b_shifted = cv2.warpAffine(b, M_b, (width, height), borderMode=cv2.BORDER_REFLECT_101) # Usare reflect per i bordi
+            g_shifted = cv2.warpAffine(g, M_g, (width, height), borderMode=cv2.BORDER_REFLECT_101)
+            r_shifted = cv2.warpAffine(r, M_r, (width, height), borderMode=cv2.BORDER_REFLECT_101)
+            
+            frame_img = cv2.merge([b_shifted, g_shifted, r_shifted])
+
+    return frame_img
+
 # --- FUNZIONI DI MERGE VIDEO/AUDIO ---
 def merge_video_audio(video_path, audio_path, output_path):
     """Combina video e audio usando ffmpeg"""
@@ -701,6 +849,81 @@ color_settings = {
 st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dinamica di **ogni singolo elemento** disegnato in tutti i pattern, se abilitato. Per 'Linee Scomposte', se i colori di frequenza sono disabilitati, le linee saranno bianco/nero per contrasto. Le **'Onde Astratte' useranno i colori delle frequenze basse/acute per una gradazione** se abilitato, altrimenti un gradiente fisso.</small>", unsafe_allow_html=True)
 
 
+# --- NUOVA SEZIONE: Effetti Post-Produzione ---
+st.sidebar.header("✨ Effetti Post-Produzione")
+post_fx_settings = {
+    'glitch_enabled': st.sidebar.checkbox("Abilita Glitch", value=False),
+    'glitch_intensity': 0.0, 'glitch_frequency': 0.0, 'glitch_block_size': 0, 'glitch_color_shift': 0.0,
+
+    'distortion_enabled': st.sidebar.checkbox("Abilita Distorsione (Lente/Onda)", value=False),
+    'distortion_intensity': 0.0, 'distortion_wave_frequency': 0.0,
+
+    'saturation_enabled': st.sidebar.checkbox("Abilita Saturazione", value=False),
+    'saturation_scale': 1.0,
+
+    'pixel_corruption_enabled': st.sidebar.checkbox("Abilita Pixel Corrotti", value=False),
+    'pixel_corruption_intensity': 0.0, 'pixel_corruption_size': 0,
+
+    'chromatic_aberration_enabled': st.sidebar.checkbox("Abilita Aberrazione Cromatica", value=False),
+    'chromatic_aberration_intensity': 0.0
+}
+
+if post_fx_settings['glitch_enabled']:
+    st.sidebar.subheader("Glitch Controlli")
+    post_fx_settings['glitch_intensity'] = st.sidebar.slider(
+        "Intensità Glitch", min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+        help="Forza degli spostamenti e delle distorsioni."
+    )
+    post_fx_settings['glitch_frequency'] = st.sidebar.slider(
+        "Frequenza Glitch", min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+        help="Probabilità che l'effetto glitch appaia in un frame."
+    )
+    post_fx_settings['glitch_block_size'] = st.sidebar.slider(
+        "Dimensione Blocchi Glitch", min_value=10, max_value=100, value=20, step=5,
+        help="Dimensione media dei blocchi di pixel coinvolti."
+    )
+    post_fx_settings['glitch_color_shift'] = st.sidebar.slider(
+        "Color Shift Glitch", min_value=0.0, max_value=10.0, value=0.0, step=0.5,
+        help="Intensità dello sfasamento dei canali colore durante il glitch."
+    )
+
+if post_fx_settings['distortion_enabled']:
+    st.sidebar.subheader("Distorsione Controlli")
+    post_fx_settings['distortion_intensity'] = st.sidebar.slider(
+        "Intensità Distorsione", min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+        help="Grado di deformazione dell'immagine (effetto lente/onda)."
+    )
+    post_fx_settings['distortion_wave_frequency'] = st.sidebar.slider(
+        "Frequenza Onda Distorsione", min_value=0.0, max_value=5.0, value=0.0, step=0.1,
+        help="Velocità dell'effetto ondulato della distorsione."
+    )
+
+if post_fx_settings['saturation_enabled']:
+    st.sidebar.subheader("Saturazione Controlli")
+    post_fx_settings['saturation_scale'] = st.sidebar.slider(
+        "Scala Saturazione", min_value=0.0, max_value=3.0, value=1.0, step=0.1,
+        help="Moltiplicatore della vividezza dei colori (1.0 = normale, >1.0 = più saturo, <1.0 = meno saturo)."
+    )
+
+if post_fx_settings['pixel_corruption_enabled']:
+    st.sidebar.subheader("Pixel Corrotti Controlli")
+    post_fx_settings['pixel_corruption_intensity'] = st.sidebar.slider(
+        "Intensità Pixel Corrotti", min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+        help="Probabilità e forza della pixelizzazione."
+    )
+    post_fx_settings['pixel_corruption_size'] = st.sidebar.slider(
+        "Dimensione Pixel Corrotti", min_value=1, max_value=50, value=1, step=1,
+        help="Dimensione dei blocchi pixelati (più grande = più visibile)."
+    )
+
+if post_fx_settings['chromatic_aberration_enabled']:
+    st.sidebar.subheader("Aberrazione Cromatica Controlli")
+    post_fx_settings['chromatic_aberration_intensity'] = st.sidebar.slider(
+        "Intensità Aberrazione Cromatica", min_value=0.0, max_value=20.0, value=0.0, step=1.0,
+        help="Distanza di sfasamento dei canali colore (simula difetti della lente)."
+    )
+
+
 # Processing section
 if uploaded_file is not None:
     st.success(f"File caricato: {uploaded_file.name}")
@@ -764,6 +987,19 @@ if uploaded_file is not None:
                         selected_pattern_mode, glitch_settings, particles_settings, burst_settings, waves_settings
                     )
                     
+                    # --- APPLICA EFFETTI POST-PRODUZIONE ---
+                    # Ri-calcola effective_rms, phase, beat_intensity per gli effetti post-produzione
+                    # Se non hai già effective_rms, phase, beat_intensity qui, puoi ricalcolarli
+                    # oppure passare quelli calcolati in draw_geometric_pattern_bpm_sync
+                    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data) # Ricalcolo per chiarezza o usa valori passati
+                    effective_rms_for_post_fx = rms * movement_scale # O un'altra scala se preferisci
+                    phase_for_post_fx, is_on_beat_for_post_fx, beat_intensity_for_post_fx = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
+                    
+                    frame_img = apply_post_processing_effects(
+                        frame_img, width, height, rms, current_time, bmp_settings, 
+                        post_fx_settings, effective_rms_for_post_fx, phase_for_post_fx, beat_intensity_for_post_fx
+                    )
+
                     # Write frame
                     out.write(frame_img)
                     
@@ -819,7 +1055,8 @@ st.markdown("""
 2.  **Imposta** formato video
 3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive" e il nuovo **"Onde Astratte"**.
 4.  **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
-5.  **Genera** il tuo video artistico!
+5.  **Attiva e regola gli Effetti Post-Produzione** per dare un tocco finale al video.
+6.  **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
 -   **Sincronizzazione automatica** sul tempo del brano
@@ -832,4 +1069,12 @@ st.markdown("""
 -   **Linee Scomposte (Glitch)**: Linee che si "rompono" e glitchano in base all'audio. Ora con **colori per elemento reattivi alle frequenze (o bianco/nero per contrasto) e scelta dell'orientamento (verticale, orizzontale o entrambi)!**
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
 -   **Onde Astratte**: Un nuovo pattern di linee ondulate e fluide che attraversano lo schermo, reagendo al volume e alle frequenze dell'audio. Le linee mostrano una **gradazione di colore** basata sui colori delle frequenze (o un gradiente fisso se disabilitati), per un effetto visivo moderno e organico.
+
+### ✨ Nuovi Effetti Post-Produzione Globali:
+Questi effetti si applicano all'intero video dopo che il pattern è stato disegnato:
+-   **Glitch**: Distorsioni visive e spostamenti di blocchi.
+-   **Distorsione (Lente/Onda)**: Deforma l'immagine come attraverso una lente o un'onda.
+-   **Saturazione**: Controlla la vividezza dei colori.
+-   **Pixel Corrotti**: Introduce artefatti di pixelizzazione.
+-   **Aberrazione Cromatica**: Simula un effetto di sfasamento dei colori come in una lente difettosa.
 """)
