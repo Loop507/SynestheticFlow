@@ -7,7 +7,7 @@ import time
 import os
 import subprocess
 from numba import jit
-import random # Mantenuto per usi specifici non legati alla selezione del pattern mode
+import random
 
 # --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
@@ -154,7 +154,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     
     return float(base_value + modulation)
 
-# --- NUOVA FUNZIONE PER PATTERN GEOMETRICO (ora più dinamica e senza "zoom") ---
+# --- FUNZIONE PER PATTERN GEOMETRICO ---
 def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
@@ -168,15 +168,14 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     effective_high_freq = high_freq * movement_scale_factor
 
     # Determinare il "modo" del pattern in modo più controllato, senza casualità
-    # Utilizziamo la fase BPM e le frequenze per un cambio più prevedibile e musicale
     
     pattern_mode = 0 # Default mode (quadrati rotanti)
 
     # Se c'è un beat forte, cicliamo tra le modalità per un breve periodo
     if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-        # Cicla tra le modalità 1, 2, 3, 4 (il nuovo random)
+        # Cicla tra le modalità 1, 2, 3, 4, 5 (il nuovo effetto glitch)
         beat_idx = np.searchsorted(beat_times, current_time)
-        pattern_mode = (beat_idx % 4) + 1 # Ora cicla tra 1, 2, 3, 4
+        pattern_mode = (beat_idx % 5) + 1 # Ora cicla tra 1, 2, 3, 4, 5
     elif effective_low_freq > 0.2:
         pattern_mode = 1
     elif effective_mid_freq > 0.2:
@@ -185,7 +184,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         pattern_mode = 3
     else:
         # Quando non ci sono picchi, ritorna al pattern base o una variazione lenta
-        pattern_mode = int((current_time * 0.25) % 5) # Variazione lenta e ciclica tra 0,1,2,3,4
+        pattern_mode = int((current_time * 0.25) % 6) # Variazione lenta e ciclica tra 0,1,2,3,4,5
         
     # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
     cell_size_base = 70 
@@ -338,7 +337,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 # Aggiungi un piccolo punto al centro con un colore complementare
                 cv2.circle(frame_img, (cx, cy), int(2 + effective_high_freq * 5), border_color, -1)
 
-            elif pattern_mode == 4: # Nuovo: effetto "Geometric Random Burst"
+            elif pattern_mode == 4: # Effetto "Geometric Random Burst"
                 # Questo effetto è massimamente casuale ma modulato dall'audio
                 
                 # Probabilità di disegnare un elemento, aumenta con l'RMS e l'intensità del beat
@@ -378,6 +377,49 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         # Aggiungiamo anche il riempimento per alcuni triangoli
                         if random.random() < 0.5:
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], rand_color)
+            
+            elif pattern_mode == 5: # Nuovo: effetto "Linee Scomposte"
+                # Sfondo della cella come "pagina bianca"
+                cv2.rectangle(frame_img, (x1, y1), (x2, y2), (255, 255, 255), -1) # Bianco
+
+                # Colore delle linee (nero o reattivo)
+                line_color = (0, 0, 0) # Nero
+                
+                # Intensità di "rottura" basata sulle alte frequenze e RMS
+                break_intensity = np.clip(effective_high_freq * 4.0 + effective_rms * 2.0, 0.0, 1.0)
+                
+                # Numero di linee verticali all'interno della cella
+                num_lines = max(2, int(current_cell_size / 15)) 
+                
+                for i in range(num_lines):
+                    line_x = x1 + int(i * (current_cell_size / num_lines))
+                    
+                    # Se l'intensità di rottura è alta, spezziamo la linea
+                    if random.random() < break_intensity * 0.7: # Probabilità di rottura
+                        num_segments = max(2, int(break_intensity * 5)) # Più forte = più segmenti
+                        segment_height = current_cell_size / num_segments
+                        
+                        for s in range(num_segments):
+                            y_start_segment = y1 + int(s * segment_height)
+                            y_end_segment = y1 + int((s + 1) * segment_height)
+                            
+                            # Aggiungi un offset casuale orizzontale per l'effetto "glitch"
+                            glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
+                            
+                            # Riduci la lunghezza del segmento casualmente per "spazi"
+                            segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
+                            y_start_segment += int((1 - segment_shrink) * segment_height / 2)
+                            y_end_segment -= int((1 - segment_shrink) * segment_height / 2)
+
+                            cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
+                                     (line_x + glitch_offset, y_end_segment), 
+                                     line_color, max(1, current_border_thickness // 2))
+                    else:
+                        # Linea intera (o leggermente spostata)
+                        glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
+                        cv2.line(frame_img, (line_x + glitch_offset, y1), (line_x + glitch_offset, y2), 
+                                 line_color, current_border_thickness)
+
 
     # Alpha blending per questo layer
     alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
