@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, glitch_settings, particles_settings, burst_settings, convergence_settings, waves_settings):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, glitch_settings, particles_settings, burst_settings, waves_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -397,126 +397,6 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             # Disegna la particella come un cerchio
             cv2.circle(frame_img, (x_pos, y_pos), particle_size, particle_color, -1) # -1 per riempire il cerchio
 
-    elif pattern_mode == 8: # Effetto "Convergenza Diagonale" (Ex-Propagazione Lineare)
-        # La dimensione della "cella" per la nostra griglia diagonale
-        diagonal_cell_size_base = 100 
-        diagonal_cell_size_mod_audio = effective_rms * 30 
-        diagonal_cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 30 if bmp_settings['enabled'] else 0
-        current_diag_cell_size = int(diagonal_cell_size_base + diagonal_cell_size_mod_audio + diagonal_cell_size_mod_bpm)
-        current_diag_cell_size = max(50, min(250, current_diag_cell_size))
-
-        line_thickness_conv = max(1, int(current_border_thickness * convergence_settings['line_thickness_scale']))
-        
-        # Iteriamo su una griglia "virtuale" ruotata
-        # Per creare una griglia diagonale di quadrati (romboidi) o triangoli
-        # Iteriamo con un passo di metà cell_size per coprire tutti i vertici dei rombi
-        step_x = current_diag_cell_size // 2
-        step_y = current_diag_cell_size // 2
-
-        # Aumenta leggermente il raggio di iterazione per coprire i bordi
-        for y_idx in range(-1, height // step_y + 2):
-            for x_idx in range(-1, width // step_x + 2):
-                
-                # Calcola il centro del "quadrato virtuale" di cui il vertice è l'angolo
-                cx = x_idx * step_x
-                cy = y_idx * step_y
-                
-                # Modulazione della posizione del centro per un effetto dinamico generale
-                pos_mod_x = int(np.sin(current_time * 1.5 + cx * 0.002) * effective_rms * 15)
-                pos_mod_y = int(np.cos(current_time * 1.5 + cy * 0.002) * effective_rms * 15)
-                
-                cx += pos_mod_x
-                cy += pos_mod_y
-
-                # Determina i 4 vertici del rombo (quadrato ruotato di 45 gradi)
-                # I vertici sono offset rispetto al centro (cx, cy)
-                v1 = (cx, cy - step_x) # Top
-                v2 = (cx + step_x, cy) # Right
-                v3 = (cx, cy + step_x) # Bottom
-                v4 = (cx - step_x, cy) # Left
-
-                vertices = [v1, v2, v3, v4]
-
-                # Disegna i bordi dei rombi (opzionale, per rendere la griglia visibile)
-                if convergence_settings['draw_grid_lines']:
-                     grid_color = hex_to_bgr(color_settings['background_color']) # Colore scuro per le linee della griglia
-                     for i in range(4):
-                         cv2.line(frame_img, vertices[i], vertices[(i+1)%4], grid_color, max(1, line_thickness_conv // 2))
-
-                # COLORE FISSO BIANCO PER "CONVERGENZA DIAGONALE"
-                monochromatic_line_color = (255, 255, 255) # Bianco fisso
-
-                # Alterniamo il tipo di pattern per ogni rombo per creare l'effetto "a scacchiera" diagonale
-                # Usiamo l'indice della cella virtuale (x_idx + y_idx) per determinare l'alternanza
-                if (x_idx + y_idx) % 2 == 0: # Tipo A: Convergenza verso il centro del rombo
-                    # Punto di convergenza (può essere modulato)
-                    conv_point_x = cx
-                    conv_point_y = cy
-                    
-                    # Modulazione del punto di convergenza basata su RMS e BPM
-                    conv_mod_strength = effective_rms * 50 + (apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 20 if bmp_settings['enabled'] else 0)
-                    conv_point_x += int(np.sin(current_time * 4) * conv_mod_strength * convergence_settings['convergence_spread'])
-                    conv_point_y += int(np.cos(current_time * 4) * conv_mod_strength * convergence_settings['convergence_spread'])
-                    
-                    num_lines_in_cell = convergence_settings['lines_per_cell']
-                    
-                    # Colore per questo set di linee (fisso bianco)
-                    line_color_converge = monochromatic_line_color 
-
-                    # Disegna linee da ogni vertice al punto di convergenza
-                    for vertex in vertices:
-                        for i in range(num_lines_in_cell):
-                            # Interpolazione tra il vertice e il punto di convergenza
-                            t = i / (num_lines_in_cell - 1) if num_lines_in_cell > 1 else 0.5
-                            
-                            # Punto di partenza sulla linea tra vertice e centro
-                            px = int(vertex[0] + (conv_point_x - vertex[0]) * t)
-                            py = int(vertex[1] + (conv_point_y - vertex[1]) * t)
-                            
-                            # Aggiungi un piccolo offset per un effetto "piuma" più organico
-                            offset_angle = np.arctan2(py - conv_point_y, px - conv_point_x) + np.pi/2
-                            feather_offset_mag = int(random.uniform(-1, 1) * convergence_settings['feather_spread'] * (1 + effective_rms))
-                            px += int(feather_offset_mag * np.cos(offset_angle))
-                            py += int(feather_offset_mag * np.sin(offset_angle))
-
-                            cv2.line(frame_img, (px, py), (conv_point_x, conv_point_y), line_color_converge, line_thickness_conv)
-
-                else: # Tipo B: Linee parallele o divergenti/convergenti verso un lato
-                    # Prendo i due vertici in alto e in basso per definire l'asse verticale del rombo
-                    v_top = v1
-                    v_bottom = v3
-                    
-                    num_lines_in_cell = convergence_settings['lines_per_cell']
-                    # Colore per questo set di linee (fisso bianco)
-                    line_color_diverge = monochromatic_line_color 
-
-                    # Disegna linee orizzontali all'interno del rombo, che si espandono o restringono
-                    for i in range(num_lines_in_cell):
-                        t = i / (num_lines_in_cell - 1) if num_lines_in_cell > 1 else 0.5
-                        
-                        # Interpolare lungo l'asse verticale del rombo per trovare il punto centrale della linea
-                        line_center_x = int(v_top[0] + (v_bottom[0] - v_top[0]) * t)
-                        line_center_y = int(v_top[1] + (v_bottom[1] - v_top[1]) * t)
-                        
-                        # Calcola la larghezza massima della linea a questa altezza (interpolando tra v4 e v2)
-                        current_half_width = step_x * (1 - abs(t - 0.5) * 2) # Massima al centro, zero ai bordi
-                        
-                        # Modula la larghezza della linea basata su RMS e BPM per un effetto pulsante
-                        line_width_mod_audio = effective_rms * 30
-                        line_width_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 10 if bmp_settings['enabled'] else 0
-                        
-                        current_half_width_mod = max(0, int(current_half_width + line_width_mod_audio + line_width_mod_bpm))
-
-                        # Punto di inizio e fine della linea
-                        start_line_x = int(line_center_x - current_half_width_mod)
-                        end_line_x = int(line_center_x + current_half_width_mod)
-                        
-                        # Aggiungi un offset casuale per simulare la "texture" dell'immagine
-                        random_offset_y = int(random.uniform(-convergence_settings['randomness_y'], convergence_settings['randomness_y']))
-
-                        cv2.line(frame_img, (start_line_x, line_center_y + random_offset_y), 
-                                 (end_line_x, line_center_y + random_offset_y), 
-                                 line_color_diverge, line_thickness_conv)
     
     elif pattern_mode == 9: # Nuovo effetto "Onde Astratte"
         num_waves = waves_settings['quantity']
@@ -579,8 +459,6 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     # Se è l'effetto particelle, potremmo usare un alpha leggermente inferiore per un look più etereo
     if pattern_mode == 6:
         alpha = min(0.95, 0.5 + effective_rms * 0.3 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0)) 
-    elif pattern_mode == 8: # Alpha per la convergenza diagonale
-         alpha = min(0.95, 0.7 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0))
     elif pattern_mode == 9: # Alpha per le onde astratte, può essere leggermente più denso
         alpha = min(0.98, 0.8 + effective_rms * 0.15 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.25 if bmp_settings['enabled'] else 0))
 
@@ -643,7 +521,6 @@ pattern_options = {
     "Geometric Random Burst": 4,
     "Linee Scomposte (Glitch)": 5,
     "Particelle Reattive": 6,
-    "Convergenza Diagonale": 8,
     "Onde Astratte": 9 # Nuovo effetto
 }
 selected_pattern_name = st.sidebar.selectbox(
@@ -725,64 +602,6 @@ if selected_pattern_mode == 4:
         ['Casuale', 'Cerchio', 'Rettangolo', 'Linea', 'Triangolo']
     )
 
-# Controlli specifici per "Convergenza Diagonale" (il nuovo effetto modificato)
-convergence_settings = {
-    'line_thickness_scale': 1.0,
-    'lines_per_cell': 10,
-    'convergence_spread': 0.5,
-    'feather_spread': 5,
-    'randomness_y': 2,
-    'draw_grid_lines': False # Nuovo controllo
-}
-if selected_pattern_mode == 8:
-    st.sidebar.subheader("Convergenza Diagonale - Controlli")
-    st.sidebar.markdown("*(La dimensione delle celle è reattiva all'audio/BPM)*")
-    
-    convergence_settings['line_thickness_scale'] = st.sidebar.slider(
-        "Scala spessore linee",
-        min_value=0.5,
-        max_value=5.0,
-        value=1.0,
-        step=0.1,
-        help="Moltiplicatore per lo spessore delle linee."
-    )
-    convergence_settings['lines_per_cell'] = st.sidebar.slider(
-        "Numero linee per 'piuma'",
-        min_value=5,
-        max_value=30,
-        value=10,
-        step=1,
-        help="Il numero di linee che compongono ogni 'ventaglio' o 'piuma' all'interno delle celle."
-    )
-    convergence_settings['convergence_spread'] = st.sidebar.slider(
-        "Distanza convergenza/divergenza",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.5,
-        step=0.05,
-        help="Determina quanto il punto di convergenza si allontana dal centro sul beat/RMS. Valori più alti = maggiore dispersione."
-    )
-    convergence_settings['feather_spread'] = st.sidebar.slider(
-        "Effetto 'Piuma' (casualità laterale)",
-        min_value=0,
-        max_value=20,
-        value=5,
-        step=1,
-        help="Aggiunge una leggera casualità laterale alle linee per un aspetto più organico e 'piumato'."
-    )
-    convergence_settings['randomness_y'] = st.sidebar.slider(
-        "Casualià Y (linee orizzontali)",
-        min_value=0,
-        max_value=10,
-        value=2,
-        step=1,
-        help="Aggiunge una leggera casualità verticale alle linee nelle celle orizzontali/verticali."
-    )
-    convergence_settings['draw_grid_lines'] = st.sidebar.checkbox(
-        "Disegna bordi griglia (Debug)",
-        value=False,
-        help="Mostra le linee che formano la griglia diagonale sottostante per capire la struttura."
-    )
 
 # Controlli specifici per "Onde Astratte"
 waves_settings = {
@@ -879,7 +698,7 @@ color_settings = {
         step=0.1
     )
 }
-st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dinamica di **ogni singolo elemento** disegnato in tutti i pattern, se abilitato. Per 'Linee Scomposte', se i colori di frequenza sono disabilitati, le linee saranno bianco/nero per contrasto. L'effetto **'Convergenza Diagonale' è sempre in bianco e nero.** Le **'Onde Astratte' useranno i colori delle frequenze basse/acute per una gradazione** se abilitato, altrimenti un gradiente fisso.</small>", unsafe_allow_html=True)
+st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dinamica di **ogni singolo elemento** disegnato in tutti i pattern, se abilitato. Per 'Linee Scomposte', se i colori di frequenza sono disabilitati, le linee saranno bianco/nero per contrasto. Le **'Onde Astratte' useranno i colori delle frequenze basse/acute per una gradazione** se abilitato, altrimenti un gradiente fisso.</small>", unsafe_allow_html=True)
 
 
 # Processing section
@@ -942,7 +761,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, glitch_settings, particles_settings, burst_settings, convergence_settings, waves_settings
+                        selected_pattern_mode, glitch_settings, particles_settings, burst_settings, waves_settings
                     )
                     
                     # Write frame
@@ -998,7 +817,7 @@ st.markdown("""
 ### 📖 Come usare:
 1.  **Carica** un file audio (MP3, WAV, etc.)
 2.  **Imposta** formato video
-3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive", "Convergenza Diagonale" e il nuovo **"Onde Astratte"**.
+3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive" e il nuovo **"Onde Astratte"**.
 4.  **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
 5.  **Genera** il tuo video artistico!
 
@@ -1012,6 +831,5 @@ st.markdown("""
 -   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze. Ora con **colori per elemento basati sulle frequenze, controllo della quantità e selezione del tipo di figura!**
 -   **Linee Scomposte (Glitch)**: Linee che si "rompono" e glitchano in base all'audio. Ora con **colori per elemento reattivi alle frequenze (o bianco/nero per contrasto) e scelta dell'orientamento (verticale, orizzontale o entrambi)!**
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
--   **Convergenza Diagonale**: Un effetto ispirato al tuo disegno in bianco e nero, che crea pattern di linee "a piuma" o "a ventaglio" all'interno di una griglia diagonale dinamica, reagendo all'audio e ai BPM. Questo effetto è **sempre in bianco e nero** (linee bianche su sfondo scuro).
 -   **Onde Astratte**: Un nuovo pattern di linee ondulate e fluide che attraversano lo schermo, reagendo al volume e alle frequenze dell'audio. Le linee mostrano una **gradazione di colore** basata sui colori delle frequenze (o un gradiente fisso se disabilitati), per un effetto visivo moderno e organico.
 """)
