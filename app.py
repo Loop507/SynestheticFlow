@@ -170,14 +170,13 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     # Determinare il "modo" del pattern in modo più controllato, senza casualità
     # Utilizziamo la fase BPM e le frequenze per un cambio più prevedibile e musicale
     
-    pattern_mode = 0 # Default mode
+    pattern_mode = 0 # Default mode (quadrati rotanti)
 
-    # Se c'è un beat forte, possiamo forzare un cambio di pattern per un breve periodo
+    # Se c'è un beat forte, cicliamo tra le modalità per un breve periodo
     if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-        # Cicla tra le modalità 1, 2, 3 in base all'indice del beat o un contatore temporale
-        # Questo crea una sequenza controllata anziché casuale.
+        # Cicla tra le modalità 1, 2, 3, 4 (il nuovo random)
         beat_idx = np.searchsorted(beat_times, current_time)
-        pattern_mode = (beat_idx % 3) + 1 # Cicla tra 1, 2, 3
+        pattern_mode = (beat_idx % 4) + 1 # Ora cicla tra 1, 2, 3, 4
     elif effective_low_freq > 0.2:
         pattern_mode = 1
     elif effective_mid_freq > 0.2:
@@ -186,7 +185,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         pattern_mode = 3
     else:
         # Quando non ci sono picchi, ritorna al pattern base o una variazione lenta
-        pattern_mode = int((current_time * 0.25) % 4) # Variazione lenta e ciclica
+        pattern_mode = int((current_time * 0.25) % 5) # Variazione lenta e ciclica tra 0,1,2,3,4
         
     # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
     cell_size_base = 70 
@@ -339,6 +338,46 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 # Aggiungi un piccolo punto al centro con un colore complementare
                 cv2.circle(frame_img, (cx, cy), int(2 + effective_high_freq * 5), border_color, -1)
 
+            elif pattern_mode == 4: # Nuovo: effetto "Geometric Random Burst"
+                # Questo effetto è massimamente casuale ma modulato dall'audio
+                
+                # Probabilità di disegnare un elemento, aumenta con l'RMS e l'intensità del beat
+                draw_probability = 0.05 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0)
+                draw_probability = min(0.6, draw_probability) # Limita la probabilità massima
+
+                if random.random() < draw_probability:
+                    # Scegli casualmente il tipo di forma
+                    shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
+                    
+                    # Colore leggermente randomizzato dal colore base
+                    rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
+                    rand_color = tuple(np.clip(np.array(fill_color) + rand_color_mod, 0, 255).tolist())
+
+                    # Posizione casuale all'interno della cella (o anche fuori leggermente)
+                    rand_x = x1 + random.randint(-current_cell_size // 4, current_cell_size)
+                    rand_y = y1 + random.randint(-current_cell_size // 4, current_cell_size)
+                    
+                    # Dimensione casuale influenzata dall'RMS
+                    rand_size = int(random.uniform(5, current_cell_size * 0.8) * (1 + effective_rms * 0.5))
+                    rand_thickness = int(random.uniform(1, current_border_thickness * 2))
+
+                    if shape_type == 'circle':
+                        cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, rand_color, rand_thickness)
+                    elif shape_type == 'rectangle':
+                        cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), rand_color, rand_thickness)
+                    elif shape_type == 'line':
+                        x_end = rand_x + int(random.uniform(-rand_size, rand_size))
+                        y_end = rand_y + int(random.uniform(-rand_size, rand_size))
+                        cv2.line(frame_img, (rand_x, rand_y), (x_end, y_end), rand_color, rand_thickness)
+                    elif shape_type == 'triangle':
+                        p1 = (rand_x, rand_y)
+                        p2 = (rand_x + int(rand_size * random.uniform(0.5, 1.5)), rand_y + int(rand_size * random.uniform(-0.5, 0.5)))
+                        p3 = (rand_x + int(rand_size * random.uniform(-0.5, 0.5)), rand_y + int(rand_size * random.uniform(0.5, 1.5)))
+                        pts = np.array([p1, p2, p3], np.int32)
+                        cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, rand_color, rand_thickness)
+                        # Aggiungiamo anche il riempimento per alcuni triangoli
+                        if random.random() < 0.5:
+                             cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], rand_color)
 
     # Alpha blending per questo layer
     alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
