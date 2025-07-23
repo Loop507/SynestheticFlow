@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, glitch_settings, particles_settings, burst_settings):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, glitch_settings, particles_settings, burst_settings, propagation_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -170,14 +170,14 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
     pattern_mode = selected_pattern_mode
         
-    # Dimensioni delle celle (per pattern 4, 5, 7)
+    # Dimensioni delle celle (per pattern 4, 5, 7, 8)
     cell_size_base = 70 
     cell_size_mod_audio = effective_rms * 15 
     cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 15 if bmp_settings['enabled'] else 0
     current_cell_size = int(cell_size_base + cell_size_mod_audio + cell_size_mod_bpm)
     current_cell_size = max(20, min(120, current_cell_size))
 
-    # Spessore del bordo (per pattern 4, 5, 7)
+    # Spessore del bordo (per pattern 4, 5, 7, 8)
     border_thickness_base = 1
     border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0)
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
@@ -397,7 +397,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             # Disegna la particella come un cerchio
             cv2.circle(frame_img, (x_pos, y_pos), particle_size, particle_color, -1) # -1 per riempire il cerchio
 
-    elif pattern_mode == 7: # Nuovo effetto "Griglia Geometrica"
+    elif pattern_mode == 7: # Effetto "Griglia Geometrica"
         for y in range(0, height, current_cell_size):
             for x in range(0, width, current_cell_size):
                 x1, y1 = x, y
@@ -419,6 +419,58 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     cv2.rectangle(frame_img, (x1 + offset_x, y1 + offset_y), 
                                   (x2 + offset_x, y2 + offset_y), 
                                   tuple(np.clip(np.array(cell_color) * 0.8, 0, 255).astype(np.uint8).tolist()), -1) # Colore leggermente più scuro per il riempimento
+
+    elif pattern_mode == 8: # Nuovo effetto "Propagazione Lineare"
+        # Dimensione della cella per la griglia delle origini delle linee
+        grid_cell_size_prop = max(50, int(current_cell_size * propagation_settings['grid_density']))
+        line_thickness_prop = max(1, int(current_border_thickness * propagation_settings['line_thickness_scale']))
+
+        # Offset e intensità di distorsione dalle frequenze alte e RMS
+        distortion_strength = np.clip(effective_high_freq * 3.0 + effective_rms * 1.5, 0.0, 1.0)
+        
+        # Iterare su una griglia per i punti di partenza
+        for y_start in range(0, height + grid_cell_size_prop, grid_cell_size_prop):
+            for x_start in range(0, width + grid_cell_size_prop, grid_cell_size_prop):
+                
+                center_x, center_y = x_start, y_start
+
+                # Modulazione della posizione del centro per un effetto dinamico
+                center_mod_x = int(np.sin(current_time * 2 + center_x * 0.003) * effective_rms * 20)
+                center_mod_y = int(np.cos(current_time * 2 + center_y * 0.003) * effective_rms * 20)
+                
+                # Aggiungi un offset casuale per rendere l'effetto meno "rigido"
+                center_x += center_mod_x + int(random.uniform(-20, 20) * effective_rms)
+                center_y += center_mod_y + int(random.uniform(-20, 20) * effective_rms)
+
+                # Disegna linee che si propagano dal centro
+                num_lines_per_point = propagation_settings['num_lines_per_point']
+                line_length_base = propagation_settings['line_length']
+                
+                # Modulazione della lunghezza delle linee basata su audio e BPM
+                line_length_mod_audio = effective_rms * 50
+                line_length_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 30 if bmp_settings['enabled'] else 0
+                
+                current_line_length = max(10, int(line_length_base + line_length_mod_audio + line_length_mod_bpm))
+                
+                # Determina il colore per questo gruppo di linee
+                group_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else (255, 255, 255) # Default white
+
+                for i in range(num_lines_per_point):
+                    angle = (i / num_lines_per_point) * 2 * np.pi + current_time * 0.5 * effective_rms # Rotazione influenzata dall'RMS
+                    
+                    # Calcola il punto finale della linea
+                    end_x = int(center_x + current_line_length * np.cos(angle))
+                    end_y = int(center_y + current_line_length * np.sin(angle))
+
+                    # Applica una "distorsione" alle linee basata sull'intensità di distorsione
+                    if random.random() < distortion_strength * 0.5: # Probabilità di distorsione
+                        dist_offset_x = int(random.uniform(-1, 1) * 30 * distortion_strength)
+                        dist_offset_y = int(random.uniform(-1, 1) * 30 * distortion_strength)
+                        end_x += dist_offset_x
+                        end_y += dist_offset_y
+
+                    # Disegna la linea
+                    cv2.line(frame_img, (center_x, center_y), (end_x, end_y), group_color, line_thickness_prop)
             
     # Alpha blending per questo layer (generalizzato per tutti i pattern)
     alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
@@ -428,6 +480,8 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         alpha = min(0.95, 0.5 + effective_rms * 0.3 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0)) 
     elif pattern_mode == 7: # Leggermente meno alpha per la griglia, così da vedere meglio il riempimento
         alpha = min(0.95, 0.6 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0))
+    elif pattern_mode == 8: # Alpha per la propagazione lineare
+         alpha = min(0.95, 0.65 + effective_rms * 0.25 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.35 if bmp_settings['enabled'] else 0))
 
         
     geometric_pattern_layer = frame_img.copy() # Copia il frame con il pattern
@@ -488,7 +542,8 @@ pattern_options = {
     "Geometric Random Burst": 4,
     "Linee Scomposte (Glitch)": 5,
     "Particelle Reattive": 6,
-    "Griglia Geometrica": 7 
+    "Griglia Geometrica": 7,
+    "Propagazione Lineare": 8 # Nuovo effetto
 }
 selected_pattern_name = st.sidebar.selectbox(
     "Scegli visualizzazione:",
@@ -567,6 +622,48 @@ if selected_pattern_mode == 4:
     burst_settings['figure_type'] = st.sidebar.selectbox(
         "Tipo Figura Burst",
         ['Casuale', 'Cerchio', 'Rettangolo', 'Linea', 'Triangolo']
+    )
+
+# Controlli specifici per "Propagazione Lineare" (il nuovo effetto)
+propagation_settings = {
+    'grid_density': 1.0, # Scala la dimensione della cella base
+    'num_lines_per_point': 10,
+    'line_length': 50,
+    'line_thickness_scale': 1.0
+}
+if selected_pattern_mode == 8:
+    st.sidebar.subheader("Propagazione Lineare - Controlli")
+    propagation_settings['grid_density'] = st.sidebar.slider(
+        "Densità griglia (minore = più dense)",
+        min_value=0.5,
+        max_value=2.0,
+        value=1.0,
+        step=0.1,
+        help="Determina quanto sono vicini i punti di origine delle linee. Valori minori rendono la griglia più densa."
+    )
+    propagation_settings['num_lines_per_point'] = st.sidebar.slider(
+        "Numero linee per punto",
+        min_value=2,
+        max_value=30,
+        value=10,
+        step=1,
+        help="Quante linee si irradiano da ogni punto di origine."
+    )
+    propagation_settings['line_length'] = st.sidebar.slider(
+        "Lunghezza base linee",
+        min_value=10,
+        max_value=200,
+        value=50,
+        step=5,
+        help="La lunghezza base delle linee che si propagano (modulata dall'audio)."
+    )
+    propagation_settings['line_thickness_scale'] = st.sidebar.slider(
+        "Scala spessore linee",
+        min_value=0.5,
+        max_value=5.0,
+        value=1.0,
+        step=0.1,
+        help="Moltiplicatore per lo spessore delle linee."
     )
 
 
@@ -667,7 +764,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, glitch_settings, particles_settings, burst_settings
+                        selected_pattern_mode, glitch_settings, particles_settings, burst_settings, propagation_settings
                     )
                     
                     # Write frame
@@ -723,7 +820,7 @@ st.markdown("""
 ### 📖 Come usare:
 1.  **Carica** un file audio (MP3, WAV, etc.)
 2.  **Imposta** formato video
-3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive" e "Griglia Geometrica".
+3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive", "Griglia Geometrica" e il nuovo **"Propagazione Lineare"**.
 4.  **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
 5.  **Genera** il tuo video artistico!
 
@@ -738,4 +835,5 @@ st.markdown("""
 -   **Linee Scomposte (Glitch)**: Linee che si "rompono" e glitchano in base all'audio. Ora con **colori per elemento reattivi alle frequenze (o bianco/nero per contrasto) e scelta dell'orientamento (verticale, orizzontale o entrambi)!**
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
 -   **Griglia Geometrica**: Una griglia di quadrati che reagisce all'audio e ai BPM, con ogni cella che cambia colore in base alla dominanza delle frequenze, creando un effetto strutturato ma dinamico.
+-   **Propagazione Lineare**: Un nuovo effetto ispirato alle tue immagini, dove gruppi di linee si irradiano da punti in una griglia, con movimenti e distorsioni reattivi all'audio e ai BPM. Puoi controllare la densità della griglia, il numero di linee per punto, la lunghezza base delle linee e la scala dello spessore.
 """)
