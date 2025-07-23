@@ -184,26 +184,10 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     current_border_thickness = max(1, min(15, current_border_thickness))
 
 
-    # Logica per i colori reattivi alle frequenze (generale per Burst e Linee Scomposte)
-    base_fill_color_bgr = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
-    
-    effective_pattern_color_for_burst_and_lines = (0,0,0) # Default
-    if color_settings['use_frequency_colors']:
-        low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
-        mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
-        high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
-
-        # Mix i colori in base all'intensità delle frequenze (per effetti non-particelle)
-        mixed_dynamic_color = (
-            low_bgr * effective_low_freq * 5.0 +
-            mid_bgr * effective_mid_freq * 5.0 +
-            high_bgr * effective_high_freq * 5.0
-        )
-        mixed_dynamic_color = np.clip(mixed_dynamic_color + base_fill_color_bgr * 0.2, 0, 255).astype(np.uint8) 
-        effective_pattern_color_for_burst_and_lines = tuple(mixed_dynamic_color.tolist())
-    else: # Usa i colori di base se non si usano i colori di frequenza
-        effective_pattern_color_for_burst_and_lines = hex_to_bgr(color_settings['background_color']) 
-
+    # Pre-calcola i colori base per le frequenze per la selezione per-elemento
+    base_low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
+    base_mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
+    base_high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
     # --- Differenti modalità di pattern per le trasformazioni ---
     if pattern_mode == 4: # Effetto "Geometric Random Burst"
@@ -224,9 +208,33 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Scegli casualmente il tipo di forma
                     shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
                     
-                    # Colore randomizzato che deriva da effective_pattern_color_for_burst_and_lines
-                    rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
-                    rand_color = tuple(np.clip(np.array(effective_pattern_color_for_burst_and_lines) + rand_color_mod, 0, 255).tolist())
+                    # Logica per colori individuali basati su frequenza per questo elemento
+                    current_element_color = (255, 255, 255) # Default white
+                    if color_settings['use_frequency_colors']:
+                        low_weight = effective_low_freq * 5.0 
+                        mid_weight = effective_mid_freq * 5.0 
+                        high_weight = effective_high_freq * 5.0 
+                        total_weight = low_weight + mid_weight + high_weight
+
+                        if total_weight > 0:
+                            prob_low = low_weight / total_weight
+                            prob_mid = mid_weight / total_weight
+                            rand_choice = random.uniform(0, 1)
+                            
+                            selected_base_color = None
+                            if rand_choice < prob_low:
+                                selected_base_color = base_low_bgr
+                            elif rand_choice < prob_low + prob_mid:
+                                selected_base_color = base_mid_bgr
+                            else:
+                                selected_base_color = base_high_bgr
+                            
+                            if selected_base_color is not None:
+                                color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2))
+                                current_element_color = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
+                    else: # Se i colori di frequenza non sono usati, usa un colore casuale basato sullo sfondo
+                        rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
+                        current_element_color = tuple(np.clip(np.array(hex_to_bgr(color_settings['background_color'])) + rand_color_mod, 0, 255).tolist())
 
                     # Posizione casuale all'interno della cella (o anche fuori leggermente)
                     rand_x = x1 + random.randint(-current_cell_size // 4, current_cell_size)
@@ -237,22 +245,22 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     rand_thickness = int(random.uniform(1, current_border_thickness * 2))
                     
                     if shape_type == 'circle':
-                        cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, rand_color, rand_thickness)
+                        cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, current_element_color, rand_thickness)
                     elif shape_type == 'rectangle':
-                        cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), rand_color, rand_thickness)
+                        cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), current_element_color, rand_thickness)
                     elif shape_type == 'line':
                         x_end = rand_x + int(random.uniform(-rand_size, rand_size))
                         y_end = rand_y + int(random.uniform(-rand_size, rand_size))
-                        cv2.line(frame_img, (rand_x, rand_y), (x_end, y_end), rand_color, rand_thickness)
+                        cv2.line(frame_img, (rand_x, rand_y), (x_end, y_end), current_element_color, rand_thickness)
                     elif shape_type == 'triangle':
                         p1 = (rand_x, rand_y)
                         p2 = (rand_x + int(rand_size * random.uniform(0.5, 1.5)), rand_y + int(rand_size * random.uniform(-0.5, 0.5)))
                         p3 = (rand_x + int(rand_size * random.uniform(-0.5, 0.5)), rand_y + int(rand_size * random.uniform(0.5, 1.5)))
                         pts = np.array([p1, p2, p3], np.int32)
-                        cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, rand_color, rand_thickness)
+                        cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, current_element_color, rand_thickness)
                         # Aggiungiamo anche il riempimento per alcuni triangoli
                         if random.random() < 0.5:
-                             cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], rand_color)
+                             cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], current_element_color)
             
     elif pattern_mode == 5: # Effetto "Linee Scomposte"
         # Applica il controllo dello spessore delle linee dal nuovo slider qui specificamente
@@ -268,14 +276,6 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 bg_for_lines = hex_to_bgr(color_settings['background_color'])
                 cv2.rectangle(frame_img, (x1, y1), (x2, y2), bg_for_lines, -1)
 
-                # Colore delle linee: usa effective_pattern_color_for_burst_and_lines se freq_colors attivi, altrimenti bianco/nero
-                if color_settings['use_frequency_colors']:
-                    line_color_for_lines = effective_pattern_color_for_burst_and_lines
-                else:
-                    line_color_for_lines = (0, 0, 0) # Default: Linee nere
-                    if np.mean(bg_for_lines) < 50: # Se il colore di sfondo è quasi nero
-                        line_color_for_lines = (255, 255, 255) # Linee bianche
-                
                 # Intensità di "rottura" basata sulle alte frequenze e RMS
                 break_intensity = np.clip(effective_high_freq * 4.0 + effective_rms * 2.0, 0.0, 1.0)
                 
@@ -284,6 +284,36 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 
                 for i in range(num_lines):
                     line_x = x1 + int(i * (current_cell_size / num_lines))
+                    
+                    # Logica per colori individuali basati su frequenza per questa linea/segmento
+                    line_color_for_lines = (255, 255, 255) # Default white
+                    if color_settings['use_frequency_colors']:
+                        low_weight = effective_low_freq * 5.0 
+                        mid_weight = effective_mid_freq * 5.0 
+                        high_weight = effective_high_freq * 5.0 
+                        total_weight = low_weight + mid_weight + high_weight
+
+                        if total_weight > 0:
+                            prob_low = low_weight / total_weight
+                            prob_mid = mid_weight / total_weight
+                            rand_choice = random.uniform(0, 1)
+                            
+                            selected_base_color = None
+                            if rand_choice < prob_low:
+                                selected_base_color = base_low_bgr
+                            elif rand_choice < prob_low + prob_mid:
+                                selected_base_color = base_mid_bgr
+                            else:
+                                selected_base_color = base_high_bgr
+                            
+                            if selected_base_color is not None:
+                                color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2))
+                                line_color_for_lines = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
+                    else:
+                        # Se i colori di frequenza non sono usati, usa nero/bianco per contrasto con sfondo
+                        line_color_for_lines = (0, 0, 0) # Default: Linee nere
+                        if np.mean(bg_for_lines) < 50: # Se il colore di sfondo è quasi nero
+                            line_color_for_lines = (255, 255, 255) # Linee bianche
                     
                     # Se l'intensità di rottura è alta, spezziamo la linea
                     if random.random() < break_intensity * 0.7: # Probabilità di rottura
@@ -311,7 +341,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         cv2.line(frame_img, (line_x + glitch_offset, y1), (line_x + glitch_offset, y2), 
                                  line_color_for_lines, current_line_thickness_glitch)
 
-    elif pattern_mode == 6: # Nuovo Effetto "Particelle Reattive"
+    elif pattern_mode == 6: # Effetto "Particelle Reattive"
         num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
         
         # Le particelle possono essere influenzate dal tempo per il loro movimento di base
@@ -320,11 +350,6 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
         # Reattività BPM sul raggruppamento/dispersione
         bpm_dispersion = apply_bpm_movement_modulation(1.0, phase, beat_intensity, 'pulse', bmp_settings) * 0.5 # Aumenta la dispersione sul beat
-
-        # Pre-calcola i colori base per le frequenze per le particelle
-        base_low_bgr_p = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
-        base_mid_bgr_p = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
-        base_high_bgr_p = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
         for i in range(num_particles_to_draw):
             # Posizione iniziale casuale per le particelle
@@ -345,6 +370,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5 + random.uniform(0, particles_settings['randomness_scale'])))
             
             # Colore delle particelle: Logica per colori individuali basati su frequenza
+            current_particle_color = (255, 255, 255) # Default white if no sound or weights
             if color_settings['use_frequency_colors']:
                 # Calcola "influenza" o "peso" di ciascuna banda di frequenza
                 low_weight = effective_low_freq * 5.0 
@@ -353,31 +379,28 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
                 total_weight = low_weight + mid_weight + high_weight
 
-                current_particle_color = (255, 255, 255) # Default white if no sound or weights
-
                 if total_weight > 0:
                     # Normalizza i pesi per usarli come probabilità
                     prob_low = low_weight / total_weight
                     prob_mid = mid_weight / total_weight
-                    # prob_high = high_weight / total_weight (implicito: 1 - prob_low - prob_mid)
 
                     rand_choice = random.uniform(0, 1)
                     
                     # Scegli un colore per questa singola particella in base alla dominanza delle frequenze
                     selected_base_color = None
                     if rand_choice < prob_low:
-                        selected_base_color = base_low_bgr_p # Corretto qui
+                        selected_base_color = base_low_bgr
                     elif rand_choice < prob_low + prob_mid:
-                        selected_base_color = base_mid_bgr_p # Corretto qui
+                        selected_base_color = base_mid_bgr
                     else:
-                        selected_base_color = base_high_bgr_p # Corretto qui
+                        selected_base_color = base_high_bgr
                     
                     # Applica l'intensità del colore e una leggera casualità
                     if selected_base_color is not None:
                         # Aggiungiamo un random per la luminosità/saturazione del colore selezionato
-                        color_mod_factor = particles_settings['color_intensity'] * (1.0 + random.uniform(-0.2, 0.2)) # Aggiunta casualità
+                        color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2)) # Aggiunta casualità
                         current_particle_color = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
-                
+            
                 particle_color = current_particle_color
             else:
                 # Se i colori di frequenza non sono usati, tutte le particelle sono bianche
@@ -486,7 +509,6 @@ else:
 # Controlli specifici per "Particelle Reattive"
 particles_settings = {
     'quantity': 1500, # Valore di default
-    'color_intensity': 1.0, # Valore di default
     'randomness_scale': 0 # Valore di default
 }
 if selected_pattern_mode == 6:
@@ -497,13 +519,6 @@ if selected_pattern_mode == 6:
         max_value=5000, # Puoi aumentare questo per schermi pieni
         value=1500, 
         step=100
-    )
-    particles_settings['color_intensity'] = st.sidebar.slider(
-        "Intensità Colore Particelle",
-        min_value=0.1,
-        max_value=5.0,
-        value=1.0,
-        step=0.1
     )
     particles_settings['randomness_scale'] = st.sidebar.slider(
         "Scala casualità movimento/dimensione",
@@ -535,13 +550,20 @@ bmp_settings = {
 # Color settings
 st.sidebar.header("🎨 Colori")
 color_settings = {
-    'use_frequency_colors': st.sidebar.checkbox("Usa colori frequenza", value=True),
+    'use_frequency_colors': st.sidebar.checkbox("Usa colori frequenza (per elemento)", value=True),
     'background_color': st.sidebar.color_picker("Colore sfondo", "#000000"),
     'low_freq_color': st.sidebar.color_picker("Frequenze basse", "#FF0000"),
     'mid_freq_color': st.sidebar.color_picker("Frequenze medie", "#00FF00"),
-    'high_freq_color': st.sidebar.color_picker("Frequenze acute", "#0000FF")
+    'high_freq_color': st.sidebar.color_picker("Frequenze acute", "#0000FF"),
+    'element_color_intensity': st.sidebar.slider(
+        "Intensità Colore Elementi",
+        min_value=0.1,
+        max_value=5.0,
+        value=1.0,
+        step=0.1
+    )
 }
-st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dinamica dei pattern e delle particelle. Per 'Linee Scomposte', se i colori di frequenza sono disabilitati, le linee saranno bianco/nero per contrasto.*</small>", unsafe_allow_html=True)
+st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dinamica di **ogni singolo elemento** disegnato in tutti i pattern, se abilitato. Per 'Linee Scomposte', se i colori di frequenza sono disabilitati, le linee saranno bianco/nero per contrasto.*</small>", unsafe_allow_html=True)
 
 
 # Processing section
@@ -671,7 +693,7 @@ st.markdown("""
 -   **Transizioni smooth** per effetti fluidi
 
 ### 🌀 Visualizzazioni disponibili:
--   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze.
--   **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori reattivi alle frequenze (o bianco/nero per contrasto).
+-   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze. Ora con **colori per elemento basati sulle frequenze!**
+-   **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori per elemento reattivi alle frequenze (o bianco/nero per contrasto).
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
 """)
