@@ -155,9 +155,10 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
+    Ora seleziona il pattern in base a `selected_pattern_mode`.
     """
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
@@ -167,24 +168,8 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    # Determinare il "modo" del pattern in modo più controllato, senza casualità
-    
-    pattern_mode = 0 # Default mode (quadrati rotanti)
-
-    # Se c'è un beat forte, cicliamo tra le modalità per un breve periodo
-    if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-        # Cicla tra le modalità 1, 2, 3, 4, 5 (il nuovo effetto glitch)
-        beat_idx = np.searchsorted(beat_times, current_time)
-        pattern_mode = (beat_idx % 5) + 1 # Ora cicla tra 1, 2, 3, 4, 5
-    elif effective_low_freq > 0.2:
-        pattern_mode = 1
-    elif effective_mid_freq > 0.2:
-        pattern_mode = 2
-    elif effective_high_freq > 0.2:
-        pattern_mode = 3
-    else:
-        # Quando non ci sono picchi, ritorna al pattern base o una variazione lenta
-        pattern_mode = int((current_time * 0.25) % 6) # Variazione lenta e ciclica tra 0,1,2,3,4,5
+    # Usa la modalità pattern selezionata dall'utente
+    pattern_mode = selected_pattern_mode
         
     # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
     cell_size_base = 70 
@@ -203,34 +188,31 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
     current_border_thickness = max(1, min(8, current_border_thickness))
 
+    # Colori reattivi alle frequenze (più vivaci e contrastanti) - solo se use_frequency_colors è True
+    if color_settings['use_frequency_colors']:
+        base_fill_color = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
+        
+        low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
+        mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
+        high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
-    # Colori reattivi alle frequenze (più vivaci e contrastanti)
-    base_fill_color = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
-    
-    low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
-    mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
-    high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
-
-    # Blend dei colori con maggiore intensità
-    mixed_color = (
-        low_bgr * effective_low_freq * 5.0 +
-        mid_bgr * effective_mid_freq * 5.0 +
-        high_bgr * effective_high_freq * 5.0
-    )
-    # Aggiungi un po' di colore di sfondo per evitare che sia troppo "fluido"
-    mixed_color = np.clip(mixed_color + base_fill_color * 0.2, 0, 255).astype(np.uint8) 
-    fill_color = tuple(mixed_color.tolist())
-    
-    # Colore del bordo (invertito o contrastante per visibilità)
-    border_color = tuple(np.clip(255 - mixed_color * 0.8, 0, 255).tolist()) 
+        mixed_color = (
+            low_bgr * effective_low_freq * 5.0 +
+            mid_bgr * effective_mid_freq * 5.0 +
+            high_bgr * effective_high_freq * 5.0
+        )
+        mixed_color = np.clip(mixed_color + base_fill_color * 0.2, 0, 255).astype(np.uint8) 
+        fill_color = tuple(mixed_color.tolist())
+        border_color = tuple(np.clip(255 - mixed_color * 0.8, 0, 255).tolist()) 
+    else: # Usa i colori di base se non si usano i colori di frequenza
+        fill_color = hex_to_bgr(color_settings['background_color']) # Questo andrebbe bene come colore principale
+        border_color = (255, 255, 255) if fill_color == (0,0,0) else (0,0,0) # Colore di bordo contrastante
 
     # Effetto "flash" sul beat - ora più controllato e meno invasivo
     if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-        # Crea un flash temporaneo con un colore complementare o brillante
         flash_effect_color = tuple(np.clip(np.array([255,255,255]) - np.array(fill_color), 0, 255).tolist())
-        # Disegna un rettangolo semi-trasparente sopra il frame esistente
         overlay = np.full_like(frame_img, flash_effect_color, dtype=np.uint8)
-        alpha_flash = min(0.5, beat_intensity * 0.7) # Intensità del flash
+        alpha_flash = min(0.5, beat_intensity * 0.7) 
         cv2.addWeighted(frame_img, 1.0, overlay, alpha_flash, 0, frame_img)
         
     # Disegna le forme in base al "pattern_mode"
@@ -242,102 +224,15 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             # Centro della cella
             cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2
             
-            # Offset per movimento sottile (meno dominante)
-            offset_x = int(np.sin(current_time * 3 + x * 0.005) * effective_rms * 10)
-            offset_y = int(np.cos(current_time * 3 + y * 0.005) * effective_rms * 10)
+            # Effetti di movimento casuali (applicati solo per Geometric Random Burst o se necessario)
+            offset_x = 0
+            offset_y = 0
+            if pattern_mode == 4: # Solo per Geometric Random Burst
+                offset_x = int(np.sin(current_time * 3 + x * 0.005) * effective_rms * 10)
+                offset_y = int(np.cos(current_time * 3 + y * 0.005) * effective_rms * 10)
 
             # --- Differenti modalità di pattern per le trasformazioni ---
-            if pattern_mode == 0: # Griglia di quadrati che pulsano e ruotano
-                # Rotazione in base al beat_intensity o frequenze
-                angle = (effective_rms * 50 + beat_intensity * 90) % 360
-                
-                M = cv2.getRotationMatrix2D((cx, cy), angle, 1)
-                rotated_rect_points = np.array([
-                    [x1, y1], [x2, y1], [x2, y2], [x1, y2]
-                ], dtype=np.float32).reshape(-1, 1, 2)
-                
-                rotated_rect_points = cv2.transform(rotated_rect_points, M).astype(np.int32)
-                cv2.fillConvexPoly(frame_img, rotated_rect_points, fill_color)
-                if current_border_thickness > 0:
-                    cv2.polylines(frame_img, [rotated_rect_points], True, border_color, current_border_thickness)
-
-            elif pattern_mode == 1: # Cerchi che si trasformano in triangoli (o viceversa) e si deformano
-                # Misura di "trasformazione" basata sulle basse frequenze (più graduale)
-                transform_factor = np.clip(effective_low_freq * 3.0, 0.0, 1.0) # 0=cerchio, 1=triangolo
-                
-                if transform_factor < 0.5: # Disegna cerchio che si deforma
-                    # Deformazione basata sulla fase BPM per un effetto "squeeze" o "stretch"
-                    deform_factor = 1.0 + np.sin(phase * 2) * effective_low_freq * 0.8 # Deforma lungo un asse
-                    cv2.ellipse(frame_img, (cx, cy), 
-                                (int(current_cell_size // 2 * deform_factor), int(current_cell_size // 2 / deform_factor)),
-                                0, 0, 360, fill_color, -1)
-                    if current_border_thickness > 0:
-                         cv2.ellipse(frame_img, (cx, cy), 
-                                     (int(current_cell_size // 2 * deform_factor), int(current_cell_size // 2 / deform_factor)),
-                                     0, 0, 360, border_color, current_border_thickness)
-                else: # Disegna triangolo che "pulsa"
-                    pulse_mod = np.sin(phase * 4) * 0.1 * effective_low_freq # Piccola pulsazione
-                    pts = np.array([
-                        [x1 + current_cell_size // 2, y1 - int(current_cell_size * pulse_mod)], 
-                        [x1 - int(current_cell_size * pulse_mod), y2], 
-                        [x2 + int(current_cell_size * pulse_mod), y2]
-                    ], np.int32)
-                    cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], fill_color)
-                    if current_border_thickness > 0:
-                        cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, border_color, current_border_thickness)
-
-            elif pattern_mode == 2: # Pattern a scacchiera che cambia colore e si "dissolve" in linee
-                # Dissoluzione/riapparizione basata sulle medie frequenze
-                dissolve_factor = np.clip(effective_mid_freq * 3.0, 0.0, 1.0)
-                
-                if (x // current_cell_size + y // current_cell_size) % 2 == 0:
-                    current_fill = (fill_color[0] * dissolve_factor, fill_color[1] * dissolve_factor, fill_color[2] * dissolve_factor)
-                else:
-                    current_fill = (border_color[0] * dissolve_factor, border_color[1] * dissolve_factor, border_color[2] * dissolve_factor)
-                
-                # Sostituisci il quadrato con linee se dissolve_factor è alto
-                if dissolve_factor > 0.6:
-                    line_count = int(dissolve_factor * 5) # Numero di linee che appaiono
-                    for i in range(line_count):
-                        y_line = y1 + int(current_cell_size * (i / line_count))
-                        cv2.line(frame_img, (x1, y_line), (x2, y_line), current_fill, max(1, current_border_thickness - 1))
-                else:
-                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), current_fill, -1)
-                
-                # Aggiungi piccoli artefatti per l'effetto "glitch" (meno random, più legati al dissolve_factor)
-                if random.random() < dissolve_factor * 0.3: # Random solo per la presenza, non per il pattern
-                    rand_x = random.randint(x1, x2 - 5)
-                    rand_y = random.randint(y1, y2 - 5)
-                    rand_size = random.randint(5, 15)
-                    cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), fill_color, -1)
-
-
-            elif pattern_mode == 3: # Linee orizzontali/verticali che si ispessiscono e si trasformano in un cross
-                # Spostamento e spessore basati sulle alte frequenze
-                line_thickness_mod = int(effective_high_freq * 10)
-                line_offset = int(np.sin(current_time * 6 + x * 0.01 + y * 0.01) * effective_high_freq * 30)
-                
-                # Transizione da singola linea a "cross" o griglia
-                cross_transform_factor = np.clip(effective_high_freq * 4.0, 0.0, 1.0)
-                
-                if cross_transform_factor < 0.5: # Disegna linee singole
-                    if (x // current_cell_size) % 2 == 0: # Linee verticali
-                        cv2.line(frame_img, (cx + line_offset, y1), (cx + line_offset, y2), fill_color, current_border_thickness + line_thickness_mod)
-                    else: # Linee orizzontali
-                        cv2.line(frame_img, (x1, cy + line_offset), (x2, cy + line_offset), fill_color, current_border_thickness + line_thickness_mod)
-                else: # Trasforma in una "X" o un piccolo quadrato rotante
-                    # Disegna una X
-                    cv2.line(frame_img, (x1, y1), (x2, y2), fill_color, current_border_thickness + line_thickness_mod)
-                    cv2.line(frame_img, (x1, y2), (x2, y1), fill_color, current_border_thickness + line_thickness_mod)
-                    # Oppure un piccolo quadrato al centro che pulsa
-                    pulse_size = int(current_cell_size * 0.3 * cross_transform_factor)
-                    cv2.rectangle(frame_img, (cx - pulse_size // 2, cy - pulse_size // 2), 
-                                  (cx + pulse_size // 2, cy + pulse_size // 2), border_color, -1)
-                
-                # Aggiungi un piccolo punto al centro con un colore complementare
-                cv2.circle(frame_img, (cx, cy), int(2 + effective_high_freq * 5), border_color, -1)
-
-            elif pattern_mode == 4: # Effetto "Geometric Random Burst"
+            if pattern_mode == 4: # Effetto "Geometric Random Burst"
                 # Questo effetto è massimamente casuale ma modulato dall'audio
                 
                 # Probabilità di disegnare un elemento, aumenta con l'RMS e l'intensità del beat
@@ -378,13 +273,17 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         if random.random() < 0.5:
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], rand_color)
             
-            elif pattern_mode == 5: # Nuovo: effetto "Linee Scomposte"
-                # Sfondo della cella come "pagina bianca"
-                cv2.rectangle(frame_img, (x1, y1), (x2, y2), (255, 255, 255), -1) # Bianco
+            elif pattern_mode == 5: # Effetto "Linee Scomposte"
+                # Sfondo della cella come "pagina bianca" o colore user-selected
+                bg_for_lines = hex_to_bgr(color_settings['background_color'])
+                line_color_for_lines = (0, 0, 0) # Default: Linee nere
 
-                # Colore delle linee (nero o reattivo)
-                line_color = (0, 0, 0) # Nero
+                # Se il colore di sfondo scelto è molto scuro, usiamo linee bianche per contrasto
+                if np.mean(bg_for_lines) < 50: # Se il colore di sfondo è quasi nero
+                    line_color_for_lines = (255, 255, 255) # Linee bianche
                 
+                cv2.rectangle(frame_img, (x1, y1), (x2, y2), bg_for_lines, -1)
+
                 # Intensità di "rottura" basata sulle alte frequenze e RMS
                 break_intensity = np.clip(effective_high_freq * 4.0 + effective_rms * 2.0, 0.0, 1.0)
                 
@@ -413,12 +312,12 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
                             cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
                                      (line_x + glitch_offset, y_end_segment), 
-                                     line_color, max(1, current_border_thickness // 2))
+                                     line_color_for_lines, max(1, current_border_thickness // 2))
                     else:
                         # Linea intera (o leggermente spostata)
                         glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
                         cv2.line(frame_img, (line_x + glitch_offset, y1), (line_x + glitch_offset, y2), 
-                                 line_color, current_border_thickness)
+                                 line_color_for_lines, current_border_thickness)
 
 
     # Alpha blending per questo layer
@@ -474,12 +373,20 @@ selected_format = st.sidebar.selectbox(
 )
 width, height = VIDEO_FORMATS[selected_format]
 
-# Fractal type selection
-st.sidebar.header("🌀 Tipo Visualizzazione") # Changed label
-fractal_type = st.sidebar.selectbox(
-    "Scegli visualizzazione:", # Changed label
-    ["Pattern Geometrico"] # ONLY Geometric Pattern now
+# Pattern type selection
+st.sidebar.header("🌀 Tipo Visualizzazione")
+# Mapping delle stringhe della selectbox ai numeri dei pattern
+pattern_options = {
+    "Geometric Random Burst": 4,
+    "Linee Scomposte (Glitch)": 5
+}
+selected_pattern_name = st.sidebar.selectbox(
+    "Scegli visualizzazione:",
+    list(pattern_options.keys())
 )
+# Ottieni il numero del pattern selezionato
+selected_pattern_mode = pattern_options[selected_pattern_name]
+
 
 # Movement settings
 st.sidebar.header("🎬 Movimento")
@@ -512,12 +419,14 @@ bmp_settings = {
 # Color settings
 st.sidebar.header("🎨 Colori")
 color_settings = {
-    'use_frequency_colors': st.sidebar.checkbox("Usa colori frequenza", value=True),
+    'use_frequency_colors': st.sidebar.checkbox("Usa colori frequenza (se applicabile)", value=True),
     'background_color': st.sidebar.color_picker("Colore sfondo", "#000000"),
     'low_freq_color': st.sidebar.color_picker("Frequenze basse", "#FF0000"),
     'mid_freq_color': st.sidebar.color_picker("Frequenze medie", "#00FF00"),
     'high_freq_color': st.sidebar.color_picker("Frequenze acute", "#0000FF")
 }
+st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dei pattern dinamici e i flash sul beat. Per 'Linee Scomposte', il colore di sfondo e linee saranno bianco/nero per contrasto.*</small>", unsafe_allow_html=True)
+
 
 # Processing section
 if uploaded_file is not None:
@@ -578,7 +487,7 @@ if uploaded_file is not None:
                     # Apply geometric pattern
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
-                        tempo, freq_data, color_settings, movement_scale, bmp_settings
+                        tempo, freq_data, color_settings, movement_scale, bmp_settings, selected_pattern_mode # Passa il pattern selezionato
                     )
                     
                     # Write frame
@@ -612,7 +521,7 @@ if uploaded_file is not None:
                     st.download_button(
                         label="📥 Scarica Video",
                         data=video_data,
-                        file_name=f"synesthetic_{fractal_type.lower().replace(' ', '_')}_{int(time.time())}.mp4", 
+                        file_name=f"synesthetic_{selected_pattern_name.lower().replace(' ', '_').replace('(','').replace(')','')}_{int(time.time())}.mp4", # Nome file specifico
                         mime="video/mp4"
                     )
                     
@@ -633,9 +542,9 @@ st.markdown("---")
 st.markdown("""
 ### 📖 Come usare:
 1. **Carica** un file audio (MP3, WAV, etc.)
-2. **Scegli** formato video e tipo di visualizzazione
-3. **Personalizza** impostazioni movimento e colori
-4. **Abilita** sincronizzazione BPM per effetti reattivi
+2. **Imposta** formato video
+3. **Scegli** la visualizzazione tra "Geometric Random Burst" e "Linee Scomposte (Glitch)".
+4. **Personalizza** intensità movimento, sincronizzazione BPM e colori.
 5. **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
@@ -645,5 +554,6 @@ st.markdown("""
 - **Transizioni smooth** per effetti fluidi
 
 ### 🌀 Visualizzazioni disponibili:
-- **Pattern Geometrico**: Nuove visualizzazioni basate su forme geometriche reattive!
+- **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio.
+- **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ideale per un effetto visivo distorto.
 """)
