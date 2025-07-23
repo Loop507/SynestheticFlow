@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control, particles_settings):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control, particles_settings, burst_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -170,14 +170,14 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
     pattern_mode = selected_pattern_mode
         
-    # Dimensioni delle celle (per pattern 4 e 5)
+    # Dimensioni delle celle (per pattern 4, 5, 7)
     cell_size_base = 70 
     cell_size_mod_audio = effective_rms * 15 
     cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 15 if bmp_settings['enabled'] else 0
     current_cell_size = int(cell_size_base + cell_size_mod_audio + cell_size_mod_bpm)
     current_cell_size = max(20, min(120, current_cell_size))
 
-    # Spessore del bordo (per pattern 4 e 5)
+    # Spessore del bordo (per pattern 4, 5, 7)
     border_thickness_base = 1
     border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0)
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
@@ -189,8 +189,42 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     base_mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
     base_high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
+    # Funzione helper per ottenere il colore di un singolo elemento in base alla dominanza delle frequenze
+    def get_dynamic_element_color():
+        if color_settings['use_frequency_colors']:
+            low_weight = effective_low_freq * 5.0 
+            mid_weight = effective_mid_freq * 5.0 
+            high_weight = effective_high_freq * 5.0 
+            total_weight = low_weight + mid_weight + high_weight
+
+            if total_weight > 0:
+                prob_low = low_weight / total_weight
+                prob_mid = mid_weight / total_weight
+                rand_choice = random.uniform(0, 1)
+                
+                selected_base_color = None
+                if rand_choice < prob_low:
+                    selected_base_color = base_low_bgr
+                elif rand_choice < prob_low + prob_mid:
+                    selected_base_color = base_mid_bgr
+                else:
+                    selected_base_color = base_high_bgr
+                
+                if selected_base_color is not None:
+                    color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2))
+                    return tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
+        return (255, 255, 255) # Default white if no frequency colors or no sound
+
     # --- Differenti modalità di pattern per le trasformazioni ---
     if pattern_mode == 4: # Effetto "Geometric Random Burst"
+        # Probabilità di disegnare un elemento, basata sul nuovo slider "Quantità Figure Burst"
+        # Convertiamo la scala 0-100 in una probabilità 0.0-0.7 (massimo)
+        draw_probability_user = burst_settings['figure_quantity'] / 100.0 * 0.7 
+        draw_probability_audio = effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0)
+        final_draw_probability = min(0.7, draw_probability_user + draw_probability_audio) # Limita la probabilità massima
+
+        selected_figure_type = burst_settings['figure_type']
+        
         for y in range(0, height, current_cell_size):
             for x in range(0, width, current_cell_size):
                 x1, y1 = x, y
@@ -200,41 +234,17 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 offset_x = int(np.sin(current_time * 3 + x * 0.005) * effective_rms * 10)
                 offset_y = int(np.cos(current_time * 3 + y * 0.005) * effective_rms * 10)
 
-                # Probabilità di disegnare un elemento, aumenta con l'RMS e l'intensità del beat
-                draw_probability = 0.05 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0)
-                draw_probability = min(0.6, draw_probability) # Limita la probabilità massima
-
-                if random.random() < draw_probability:
-                    # Scegli casualmente il tipo di forma
-                    shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
+                if random.random() < final_draw_probability:
+                    # Scegli il tipo di forma
+                    shape_type = selected_figure_type
+                    if selected_figure_type == 'Casuale':
+                        shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
                     
-                    # Logica per colori individuali basati su frequenza per questo elemento
-                    current_element_color = (255, 255, 255) # Default white
-                    if color_settings['use_frequency_colors']:
-                        low_weight = effective_low_freq * 5.0 
-                        mid_weight = effective_mid_freq * 5.0 
-                        high_weight = effective_high_freq * 5.0 
-                        total_weight = low_weight + mid_weight + high_weight
-
-                        if total_weight > 0:
-                            prob_low = low_weight / total_weight
-                            prob_mid = mid_weight / total_weight
-                            rand_choice = random.uniform(0, 1)
-                            
-                            selected_base_color = None
-                            if rand_choice < prob_low:
-                                selected_base_color = base_low_bgr
-                            elif rand_choice < prob_low + prob_mid:
-                                selected_base_color = base_mid_bgr
-                            else:
-                                selected_base_color = base_high_bgr
-                            
-                            if selected_base_color is not None:
-                                color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2))
-                                current_element_color = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
-                    else: # Se i colori di frequenza non sono usati, usa un colore casuale basato sullo sfondo
+                    current_element_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else hex_to_bgr(color_settings['background_color']) 
+                    if not color_settings['use_frequency_colors']: # Se i colori freq non sono usati, randomizza il colore di sfondo leggermente
                         rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
-                        current_element_color = tuple(np.clip(np.array(hex_to_bgr(color_settings['background_color'])) + rand_color_mod, 0, 255).tolist())
+                        current_element_color = tuple(np.clip(np.array(current_element_color) + rand_color_mod, 0, 255).tolist())
+
 
                     # Posizione casuale all'interno della cella (o anche fuori leggermente)
                     rand_x = x1 + random.randint(-current_cell_size // 4, current_cell_size)
@@ -244,15 +254,15 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     rand_size = int(random.uniform(5, current_cell_size * 0.8) * (1 + effective_rms * 0.5))
                     rand_thickness = int(random.uniform(1, current_border_thickness * 2))
                     
-                    if shape_type == 'circle':
+                    if shape_type == 'Cerchio': # Cambiato da 'circle' a 'Cerchio' per coerenza con l'UI
                         cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, current_element_color, rand_thickness)
-                    elif shape_type == 'rectangle':
+                    elif shape_type == 'Rettangolo': # Cambiato da 'rectangle' a 'Rettangolo'
                         cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), current_element_color, rand_thickness)
-                    elif shape_type == 'line':
+                    elif shape_type == 'Linea': # Cambiato da 'line' a 'Linea'
                         x_end = rand_x + int(random.uniform(-rand_size, rand_size))
                         y_end = rand_y + int(random.uniform(-rand_size, rand_size))
                         cv2.line(frame_img, (rand_x, rand_y), (x_end, y_end), current_element_color, rand_thickness)
-                    elif shape_type == 'triangle':
+                    elif shape_type == 'Triangolo': # Cambiato da 'triangle' a 'Triangolo'
                         p1 = (rand_x, rand_y)
                         p2 = (rand_x + int(rand_size * random.uniform(0.5, 1.5)), rand_y + int(rand_size * random.uniform(-0.5, 0.5)))
                         p3 = (rand_x + int(rand_size * random.uniform(-0.5, 0.5)), rand_y + int(rand_size * random.uniform(0.5, 1.5)))
@@ -288,27 +298,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Logica per colori individuali basati su frequenza per questa linea/segmento
                     line_color_for_lines = (255, 255, 255) # Default white
                     if color_settings['use_frequency_colors']:
-                        low_weight = effective_low_freq * 5.0 
-                        mid_weight = effective_mid_freq * 5.0 
-                        high_weight = effective_high_freq * 5.0 
-                        total_weight = low_weight + mid_weight + high_weight
-
-                        if total_weight > 0:
-                            prob_low = low_weight / total_weight
-                            prob_mid = mid_weight / total_weight
-                            rand_choice = random.uniform(0, 1)
-                            
-                            selected_base_color = None
-                            if rand_choice < prob_low:
-                                selected_base_color = base_low_bgr
-                            elif rand_choice < prob_low + prob_mid:
-                                selected_base_color = base_mid_bgr
-                            else:
-                                selected_base_color = base_high_bgr
-                            
-                            if selected_base_color is not None:
-                                color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2))
-                                line_color_for_lines = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
+                        line_color_for_lines = get_dynamic_element_color()
                     else:
                         # Se i colori di frequenza non sono usati, usa nero/bianco per contrasto con sfondo
                         line_color_for_lines = (0, 0, 0) # Default: Linee nere
@@ -370,44 +360,33 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5 + random.uniform(0, particles_settings['randomness_scale'])))
             
             # Colore delle particelle: Logica per colori individuali basati su frequenza
-            current_particle_color = (255, 255, 255) # Default white if no sound or weights
-            if color_settings['use_frequency_colors']:
-                # Calcola "influenza" o "peso" di ciascuna banda di frequenza
-                low_weight = effective_low_freq * 5.0 
-                mid_weight = effective_mid_freq * 5.0 
-                high_weight = effective_high_freq * 5.0 
-
-                total_weight = low_weight + mid_weight + high_weight
-
-                if total_weight > 0:
-                    # Normalizza i pesi per usarli come probabilità
-                    prob_low = low_weight / total_weight
-                    prob_mid = mid_weight / total_weight
-
-                    rand_choice = random.uniform(0, 1)
-                    
-                    # Scegli un colore per questa singola particella in base alla dominanza delle frequenze
-                    selected_base_color = None
-                    if rand_choice < prob_low:
-                        selected_base_color = base_low_bgr
-                    elif rand_choice < prob_low + prob_mid:
-                        selected_base_color = base_mid_bgr
-                    else:
-                        selected_base_color = base_high_bgr
-                    
-                    # Applica l'intensità del colore e una leggera casualità
-                    if selected_base_color is not None:
-                        # Aggiungiamo un random per la luminosità/saturazione del colore selezionato
-                        color_mod_factor = color_settings['element_color_intensity'] * (1.0 + random.uniform(-0.2, 0.2)) # Aggiunta casualità
-                        current_particle_color = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
-            
-                particle_color = current_particle_color
-            else:
-                # Se i colori di frequenza non sono usati, tutte le particelle sono bianche
-                particle_color = (255, 255, 255)
+            particle_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else (255, 255, 255) # Default white
 
             # Disegna la particella come un cerchio
             cv2.circle(frame_img, (x_pos, y_pos), particle_size, particle_color, -1) # -1 per riempire il cerchio
+
+    elif pattern_mode == 7: # Nuovo effetto "Griglia Geometrica"
+        for y in range(0, height, current_cell_size):
+            for x in range(0, width, current_cell_size):
+                x1, y1 = x, y
+                x2, y2 = x + current_cell_size, y + current_cell_size
+                
+                # Calcola il colore per ogni cella
+                cell_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else hex_to_bgr(color_settings['background_color'])
+                
+                # Aggiungi una leggera modulazione di posizione per un effetto più vivo
+                offset_x = int(np.sin(current_time * 5 + x * 0.01) * effective_rms * 5)
+                offset_y = int(np.cos(current_time * 5 + y * 0.01) * effective_rms * 5)
+
+                # Disegna il rettangolo
+                cv2.rectangle(frame_img, (x1 + offset_x, y1 + offset_y), 
+                              (x2 + offset_x, y2 + offset_y), 
+                              cell_color, current_border_thickness)
+                # Opzionalmente riempi il rettangolo
+                if random.random() < (effective_rms * 0.5 + (beat_intensity * 0.2 if bmp_settings['enabled'] else 0)): # Riempie con maggiore probabilità sul beat/RMS
+                    cv2.rectangle(frame_img, (x1 + offset_x, y1 + offset_y), 
+                                  (x2 + offset_x, y2 + offset_y), 
+                                  tuple(np.clip(np.array(cell_color) * 0.8, 0, 255).astype(np.uint8).tolist()), -1) # Colore leggermente più scuro per il riempimento
             
     # Alpha blending per questo layer (generalizzato per tutti i pattern)
     alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
@@ -415,6 +394,9 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     # Se è l'effetto particelle, potremmo usare un alpha leggermente inferiore per un look più etereo
     if pattern_mode == 6:
         alpha = min(0.95, 0.5 + effective_rms * 0.3 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0)) 
+    elif pattern_mode == 7: # Leggermente meno alpha per la griglia, così da vedere meglio il riempimento
+        alpha = min(0.95, 0.6 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0))
+
         
     geometric_pattern_layer = frame_img.copy() # Copia il frame con il pattern
     cv2.addWeighted(frame_img, 1-alpha, geometric_pattern_layer, alpha, 0, frame_img)
@@ -473,7 +455,8 @@ st.sidebar.header("🌀 Tipo Visualizzazione")
 pattern_options = {
     "Geometric Random Burst": 4,
     "Linee Scomposte (Glitch)": 5,
-    "Particelle Reattive": 6 
+    "Particelle Reattive": 6,
+    "Griglia Geometrica": 7 # Nuovo Pattern
 }
 selected_pattern_name = st.sidebar.selectbox(
     "Scegli visualizzazione:",
@@ -494,6 +477,7 @@ movement_scale = st.sidebar.slider(
 )
 
 # Controlli specifici per "Linee Scomposte"
+line_thickness_control = 0
 if selected_pattern_mode == 5: 
     st.sidebar.subheader("Linee Scomposte - Controlli")
     line_thickness_control = st.sidebar.slider(
@@ -503,8 +487,6 @@ if selected_pattern_mode == 5:
         value=0, 
         step=1
     )
-else:
-    line_thickness_control = 0 # Imposta a 0 se l'effetto non è Linee Scomposte
 
 # Controlli specifici per "Particelle Reattive"
 particles_settings = {
@@ -526,6 +508,25 @@ if selected_pattern_mode == 6:
         max_value=20,
         value=0,
         step=1
+    )
+
+# Controlli specifici per "Geometric Random Burst"
+burst_settings = {
+    'figure_quantity': 50, # Default per la probabilità
+    'figure_type': 'Casuale' # Default per il tipo di figura
+}
+if selected_pattern_mode == 4:
+    st.sidebar.subheader("Geometric Random Burst - Controlli")
+    burst_settings['figure_quantity'] = st.sidebar.slider(
+        "Quantità Figure Burst",
+        min_value=1,
+        max_value=100, # Rappresenta una percentuale della massima probabilità di disegno
+        value=50,
+        step=1
+    )
+    burst_settings['figure_type'] = st.sidebar.selectbox(
+        "Tipo Figura Burst",
+        ['Casuale', 'Cerchio', 'Rettangolo', 'Linea', 'Triangolo']
     )
 
 
@@ -626,7 +627,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, line_thickness_control, particles_settings 
+                        selected_pattern_mode, line_thickness_control, particles_settings, burst_settings
                     )
                     
                     # Write frame
@@ -682,7 +683,7 @@ st.markdown("""
 ### 📖 Come usare:
 1.  **Carica** un file audio (MP3, WAV, etc.)
 2.  **Imposta** formato video
-3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)" e "Particelle Reattive".
+3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)", "Particelle Reattive" e "Griglia Geometrica".
 4.  **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
 5.  **Genera** il tuo video artistico!
 
@@ -693,7 +694,8 @@ st.markdown("""
 -   **Transizioni smooth** per effetti fluidi
 
 ### 🌀 Visualizzazioni disponibili:
--   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze. Ora con **colori per elemento basati sulle frequenze!**
+-   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze. Ora con **colori per elemento basati sulle frequenze, controllo della quantità e selezione del tipo di figura!**
 -   **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori per elemento reattivi alle frequenze (o bianco/nero per contrasto).
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
+-   **Griglia Geometrica**: Una griglia di quadrati che reagisce all'audio e ai BPM, con ogni cella che cambia colore in base alla dominanza delle frequenze, creando un effetto strutturato ma dinamico.
 """)
