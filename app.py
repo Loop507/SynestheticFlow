@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -184,9 +184,10 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
     # Spessore del bordo - reattivo ma non dominante
     border_thickness_base = 1
-    border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0)
+    # Applica il controllo dello spessore delle linee dal nuovo slider
+    border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0) + line_thickness_control
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
-    current_border_thickness = max(1, min(8, current_border_thickness))
+    current_border_thickness = max(1, min(15, current_border_thickness)) # Aumentato il limite massimo per permettere linee più spesse
 
     # Colori reattivi alle frequenze (più vivaci e contrastanti) - solo se use_frequency_colors è True
     if color_settings['use_frequency_colors']:
@@ -222,7 +223,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             x2, y2 = x + current_cell_size, y + current_cell_size
             
             # Centro della cella
-            cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2
+            # cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2 # Non usato per pattern 5 diretto
             
             # Effetti di movimento casuali (applicati solo per Geometric Random Burst o se necessario)
             offset_x = 0
@@ -254,7 +255,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Dimensione casuale influenzata dall'RMS
                     rand_size = int(random.uniform(5, current_cell_size * 0.8) * (1 + effective_rms * 0.5))
                     rand_thickness = int(random.uniform(1, current_border_thickness * 2))
-
+                    
                     if shape_type == 'circle':
                         cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, rand_color, rand_thickness)
                     elif shape_type == 'rectangle':
@@ -398,6 +399,17 @@ movement_scale = st.sidebar.slider(
     step=0.1
 )
 
+# Nuovo slider per lo spessore delle linee
+st.sidebar.subheader("Spessore Linee (solo Linee Scomposte)")
+line_thickness_control = st.sidebar.slider(
+    "Regola spessore base delle linee",
+    min_value=0,
+    max_value=10, # Puoi aumentare questo valore se vuoi linee ancora più spesse
+    value=0, # Valore di default: nessun spessore aggiuntivo
+    step=1
+)
+
+
 # BPM Sync Settings
 st.sidebar.header("🎵 Sincronizzazione BPM")
 bmp_settings = {
@@ -487,7 +499,8 @@ if uploaded_file is not None:
                     # Apply geometric pattern
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
-                        tempo, freq_data, color_settings, movement_scale, bmp_settings, selected_pattern_mode # Passa il pattern selezionato
+                        tempo, freq_data, color_settings, movement_scale, bmp_settings, 
+                        selected_pattern_mode, line_thickness_control # Passa il nuovo controllo spessore
                     )
                     
                     # Write frame
@@ -544,7 +557,7 @@ st.markdown("""
 1. **Carica** un file audio (MP3, WAV, etc.)
 2. **Imposta** formato video
 3. **Scegli** la visualizzazione tra "Geometric Random Burst" e "Linee Scomposte (Glitch)".
-4. **Personalizza** intensità movimento, sincronizzazione BPM e colori.
+4. **Personalizza** intensità movimento, sincronizzazione BPM, **spessore linee** e colori.
 5. **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
