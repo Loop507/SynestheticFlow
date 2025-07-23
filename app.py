@@ -171,23 +171,19 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     # Usa la modalità pattern selezionata dall'utente
     pattern_mode = selected_pattern_mode
         
-    # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
+    # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern (per pattern 4 e 5)
     cell_size_base = 70 
-    # Variazione sottile basata sull'RMS, non come uno zoom
     cell_size_mod_audio = effective_rms * 15 
-    
-    # Modulazione BPM sulla dimensione per un "pop" non zoom-like
     cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 15 if bmp_settings['enabled'] else 0
-    
     current_cell_size = int(cell_size_base + cell_size_mod_audio + cell_size_mod_bpm)
-    current_cell_size = max(20, min(120, current_cell_size)) # Limiti per evitare dimensioni estreme
+    current_cell_size = max(20, min(120, current_cell_size))
 
-    # Spessore del bordo - reattivo ma non dominante
+    # Spessore del bordo - reattivo ma non dominante (per pattern 4 e 5)
     border_thickness_base = 1
-    # Applica il controllo dello spessore delle linee dal nuovo slider
-    border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0) + line_thickness_control
+    border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0)
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
-    current_border_thickness = max(1, min(15, current_border_thickness)) # Aumentato il limite massimo per permettere linee più spesse
+    current_border_thickness = max(1, min(15, current_border_thickness))
+
 
     # Colori reattivi alle frequenze (più vivaci e contrastanti) - solo se use_frequency_colors è True
     if color_settings['use_frequency_colors']:
@@ -216,26 +212,17 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         alpha_flash = min(0.5, beat_intensity * 0.7) 
         cv2.addWeighted(frame_img, 1.0, overlay, alpha_flash, 0, frame_img)
         
-    # Disegna le forme in base al "pattern_mode"
-    for y in range(0, height, current_cell_size):
-        for x in range(0, width, current_cell_size):
-            x1, y1 = x, y
-            x2, y2 = x + current_cell_size, y + current_cell_size
-            
-            # Centro della cella
-            # cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2 # Non usato per pattern 5 diretto
-            
-            # Effetti di movimento casuali (applicati solo per Geometric Random Burst o se necessario)
-            offset_x = 0
-            offset_y = 0
-            if pattern_mode == 4: # Solo per Geometric Random Burst
+    # --- Differenti modalità di pattern per le trasformazioni ---
+    if pattern_mode == 4: # Effetto "Geometric Random Burst"
+        for y in range(0, height, current_cell_size):
+            for x in range(0, width, current_cell_size):
+                x1, y1 = x, y
+                x2, y2 = x + current_cell_size, y + current_cell_size
+                
+                # Effetti di movimento casuali
                 offset_x = int(np.sin(current_time * 3 + x * 0.005) * effective_rms * 10)
                 offset_y = int(np.cos(current_time * 3 + y * 0.005) * effective_rms * 10)
 
-            # --- Differenti modalità di pattern per le trasformazioni ---
-            if pattern_mode == 4: # Effetto "Geometric Random Burst"
-                # Questo effetto è massimamente casuale ma modulato dall'audio
-                
                 # Probabilità di disegnare un elemento, aumenta con l'RMS e l'intensità del beat
                 draw_probability = 0.05 + effective_rms * 0.2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.3 if bmp_settings['enabled'] else 0)
                 draw_probability = min(0.6, draw_probability) # Limita la probabilità massima
@@ -274,7 +261,16 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         if random.random() < 0.5:
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], rand_color)
             
-            elif pattern_mode == 5: # Effetto "Linee Scomposte"
+    elif pattern_mode == 5: # Effetto "Linee Scomposte"
+        # Applica il controllo dello spessore delle linee dal nuovo slider qui specificamente
+        current_line_thickness_glitch = int(border_thickness_base + border_thickness_mod + line_thickness_control)
+        current_line_thickness_glitch = max(1, min(15, current_line_thickness_glitch)) 
+
+        for y in range(0, height, current_cell_size):
+            for x in range(0, width, current_cell_size):
+                x1, y1 = x, y
+                x2, y2 = x + current_cell_size, y + current_cell_size
+                
                 # Sfondo della cella come "pagina bianca" o colore user-selected
                 bg_for_lines = hex_to_bgr(color_settings['background_color'])
                 line_color_for_lines = (0, 0, 0) # Default: Linee nere
@@ -313,16 +309,67 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
 
                             cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
                                      (line_x + glitch_offset, y_end_segment), 
-                                     line_color_for_lines, max(1, current_border_thickness // 2))
+                                     line_color_for_lines, max(1, current_line_thickness_glitch // 2))
                     else:
                         # Linea intera (o leggermente spostata)
                         glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
                         cv2.line(frame_img, (line_x + glitch_offset, y1), (line_x + glitch_offset, y2), 
-                                 line_color_for_lines, current_border_thickness)
+                                 line_color_for_lines, current_line_thickness_glitch)
+
+    elif pattern_mode == 6: # Nuovo Effetto "Particelle Reattive"
+        num_particles = 1500 # Numero base di particelle (puoi renderlo un parametro slider dopo)
+        
+        # Le particelle possono essere influenzate dal tempo per il loro movimento di base
+        time_factor_x = np.sin(current_time * 0.5) * width * 0.1
+        time_factor_y = np.cos(current_time * 0.5) * height * 0.1
+
+        # Reattività BPM sul raggruppamento/dispersione
+        bpm_dispersion = apply_bpm_movement_modulation(1.0, phase, beat_intensity, 'pulse', bmp_settings) * 0.5 # Aumenta la dispersione sul beat
+
+        for i in range(num_particles):
+            # Posizione iniziale casuale per le particelle
+            # Modulata da RMS e tempo per un movimento più interessante
+            x_pos = int(width * (0.5 + 0.4 * np.sin(i * 0.1 + current_time * 0.8 + effective_rms * 5.0)))
+            y_pos = int(height * (0.5 + 0.4 * np.cos(i * 0.15 + current_time * 0.7 + effective_rms * 5.0)))
+            
+            # Applica una dispersione casuale e modulata dal BPM
+            x_pos += int(random.uniform(-1, 1) * 50 * bpm_dispersion * (1 + effective_rms))
+            y_pos += int(random.uniform(-1, 1) * 50 * bpm_dispersion * (1 + effective_rms))
+
+            # Assicurati che le particelle rimangano entro i bordi del frame
+            x_pos = np.clip(x_pos, 0, width - 1)
+            y_pos = np.clip(y_pos, 0, height - 1)
+
+            # Dimensione e opacità delle particelle
+            # Più piccole e meno visibili con basso RMS, più grandi e luminose con alto RMS/beat
+            particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5))
+            
+            # Colore delle particelle basato sulle frequenze, se abilitato, altrimenti un colore fisso (es. bianco)
+            if color_settings['use_frequency_colors']:
+                particle_color_b = np.clip(low_freq * 255 * 5.0, 0, 255)
+                particle_color_g = np.clip(mid_freq * 255 * 5.0, 0, 255)
+                particle_color_r = np.clip(high_freq * 255 * 5.0, 0, 255)
+                particle_color = (int(particle_color_b), int(particle_color_g), int(particle_color_r))
+            else:
+                particle_color = (255, 255, 255) # Bianco di default
+
+            # Disegna la particella come un cerchio
+            cv2.circle(frame_img, (x_pos, y_pos), particle_size, particle_color, -1) # -1 per riempire il cerchio
+            
+            # Opacità (non direttamente supportata con cv2.circle riempito così, ma l'effetto è dato dalla dispersione e dimensione)
+            # Potremmo fare un blending per un controllo più fine dell'opacità, ma per ora la dimensione basta.
 
 
-    # Alpha blending per questo layer
+    # Alpha blending per questo layer (generalizzato per tutti i pattern)
+    # L'alpha blending può dare un effetto di "persistenza" o "traccia"
+    # Per le particelle, un alpha basso può creare un effetto di "scia"
+    # Per i pattern geometrici, un alpha più alto rende il pattern più definito
     alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
+    
+    # Se è l'effetto particelle, potremmo usare un alpha leggermente inferiore per un look più etereo
+    if pattern_mode == 6:
+        alpha = min(0.95, 0.5 + effective_rms * 0.3 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0)) 
+        
     geometric_pattern_layer = frame_img.copy() # Copia il frame con il pattern
     cv2.addWeighted(frame_img, 1-alpha, geometric_pattern_layer, alpha, 0, frame_img)
 
@@ -379,7 +426,8 @@ st.sidebar.header("🌀 Tipo Visualizzazione")
 # Mapping delle stringhe della selectbox ai numeri dei pattern
 pattern_options = {
     "Geometric Random Burst": 4,
-    "Linee Scomposte (Glitch)": 5
+    "Linee Scomposte (Glitch)": 5,
+    "Particelle Reattive": 6 # NUOVO EFFETTO
 }
 selected_pattern_name = st.sidebar.selectbox(
     "Scegli visualizzazione:",
@@ -399,16 +447,18 @@ movement_scale = st.sidebar.slider(
     step=0.1
 )
 
-# Nuovo slider per lo spessore delle linee
-st.sidebar.subheader("Spessore Linee (solo Linee Scomposte)")
-line_thickness_control = st.sidebar.slider(
-    "Regola spessore base delle linee",
-    min_value=0,
-    max_value=10, # Puoi aumentare questo valore se vuoi linee ancora più spesse
-    value=0, # Valore di default: nessun spessore aggiuntivo
-    step=1
-)
-
+# Nuovo slider per lo spessore delle linee (visibile solo per Linee Scomposte)
+if selected_pattern_mode == 5: # Mostra lo slider solo se "Linee Scomposte" è selezionato
+    st.sidebar.subheader("Spessore Linee (Linee Scomposte)")
+    line_thickness_control = st.sidebar.slider(
+        "Regola spessore base delle linee",
+        min_value=0,
+        max_value=10, 
+        value=0, 
+        step=1
+    )
+else:
+    line_thickness_control = 0 # Imposta a 0 se l'effetto non è Linee Scomposte
 
 # BPM Sync Settings
 st.sidebar.header("🎵 Sincronizzazione BPM")
@@ -437,7 +487,7 @@ color_settings = {
     'mid_freq_color': st.sidebar.color_picker("Frequenze medie", "#00FF00"),
     'high_freq_color': st.sidebar.color_picker("Frequenze acute", "#0000FF")
 }
-st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dei pattern dinamici e i flash sul beat. Per 'Linee Scomposte', il colore di sfondo e linee saranno bianco/nero per contrasto.*</small>", unsafe_allow_html=True)
+st.sidebar.markdown("<small>*I colori delle frequenze influenzeranno la colorazione dei pattern dinamici e i flash sul beat. Per 'Linee Scomposte', il colore di sfondo e linee saranno bianco/nero per contrasto. Per 'Particelle Reattive', le particelle useranno questi colori.*</small>", unsafe_allow_html=True)
 
 
 # Processing section
@@ -500,7 +550,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, line_thickness_control # Passa il nuovo controllo spessore
+                        selected_pattern_mode, line_thickness_control 
                     )
                     
                     # Write frame
@@ -534,7 +584,7 @@ if uploaded_file is not None:
                     st.download_button(
                         label="📥 Scarica Video",
                         data=video_data,
-                        file_name=f"synesthetic_{selected_pattern_name.lower().replace(' ', '_').replace('(','').replace(')','')}_{int(time.time())}.mp4", # Nome file specifico
+                        file_name=f"synesthetic_{selected_pattern_name.lower().replace(' ', '_').replace('(','').replace(')','')}_{int(time.time())}.mp4", 
                         mime="video/mp4"
                     )
                     
@@ -556,8 +606,8 @@ st.markdown("""
 ### 📖 Come usare:
 1. **Carica** un file audio (MP3, WAV, etc.)
 2. **Imposta** formato video
-3. **Scegli** la visualizzazione tra "Geometric Random Burst" e "Linee Scomposte (Glitch)".
-4. **Personalizza** intensità movimento, sincronizzazione BPM, **spessore linee** e colori.
+3. **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)" e **"Particelle Reattive"**.
+4. **Personalizza** intensità movimento, sincronizzazione BPM, spessore linee (se applicabile) e colori.
 5. **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
@@ -569,4 +619,5 @@ st.markdown("""
 ### 🌀 Visualizzazioni disponibili:
 - **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio.
 - **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ideale per un effetto visivo distorto.
+- **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica.
 """)
