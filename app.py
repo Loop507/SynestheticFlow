@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control, particles_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -193,28 +193,24 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
         high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
-        # Mix i colori in base all'intensità delle frequenze
+        # Applica l'intensità del colore per le particelle
+        color_intensity_multiplier = 1.0
+        if pattern_mode == 6: # Se sono particelle, usa il loro slider di intensità
+            color_intensity_multiplier = particles_settings['color_intensity']
+
+        # Mix i colori in base all'intensità delle frequenze e il nuovo multiplier
         mixed_dynamic_color = (
-            low_bgr * effective_low_freq * 5.0 +
-            mid_bgr * effective_mid_freq * 5.0 +
-            high_bgr * effective_high_freq * 5.0
+            low_bgr * effective_low_freq * 5.0 * color_intensity_multiplier +
+            mid_bgr * effective_mid_freq * 5.0 * color_intensity_multiplier +
+            high_bgr * effective_high_freq * 5.0 * color_intensity_multiplier
         )
         # Assicurati che il colore non superi 255 e abbia una base del colore di sfondo
         mixed_dynamic_color = np.clip(mixed_dynamic_color + base_fill_color_bgr * 0.2, 0, 255).astype(np.uint8) 
         effective_pattern_color = tuple(mixed_dynamic_color.tolist())
     else: # Usa i colori di base se non si usano i colori di frequenza
-        effective_pattern_color = hex_to_bgr(color_settings['background_color']) # Questo è il colore principale per i pattern senza freq.
-        # Per il bordo o contrasto in modalità non-freq, usa un colore contrastante
-        # border_color = (255, 255, 255) if effective_pattern_color == (0,0,0) else (0,0,0) # Non più usato così globalmente
+        effective_pattern_color = hex_to_bgr(color_settings['background_color']) 
 
 
-    # Effetto "flash" sul beat rimosso per richiesta dell'utente.
-    # if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-    #     flash_effect_color = tuple(np.clip(np.array([255,255,255]) - np.array(effective_pattern_color), 0, 255).tolist())
-    #     overlay = np.full_like(frame_img, flash_effect_color, dtype=np.uint8)
-    #     alpha_flash = min(0.5, beat_intensity * 0.7) 
-    #     cv2.addWeighted(frame_img, 1.0, overlay, alpha_flash, 0, frame_img)
-        
     # --- Differenti modalità di pattern per le trasformazioni ---
     if pattern_mode == 4: # Effetto "Geometric Random Burst"
         for y in range(0, height, current_cell_size):
@@ -322,7 +318,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                                  line_color_for_lines, current_line_thickness_glitch)
 
     elif pattern_mode == 6: # Nuovo Effetto "Particelle Reattive"
-        num_particles = 1500 # Numero base di particelle (puoi renderlo un parametro slider dopo)
+        num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
         
         # Le particelle possono essere influenzate dal tempo per il loro movimento di base
         time_factor_x = np.sin(current_time * 0.5) * width * 0.1
@@ -331,23 +327,23 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         # Reattività BPM sul raggruppamento/dispersione
         bpm_dispersion = apply_bpm_movement_modulation(1.0, phase, beat_intensity, 'pulse', bmp_settings) * 0.5 # Aumenta la dispersione sul beat
 
-        for i in range(num_particles):
+        for i in range(num_particles_to_draw):
             # Posizione iniziale casuale per le particelle
             # Modulata da RMS e tempo per un movimento più interessante
-            x_pos = int(width * (0.5 + 0.4 * np.sin(i * 0.1 + current_time * 0.8 + effective_rms * 5.0)))
-            y_pos = int(height * (0.5 + 0.4 * np.cos(i * 0.15 + current_time * 0.7 + effective_rms * 5.0)))
+            # Aggiunto un fattore casuale più ampio per il movimento di base
+            x_pos = int(width * (0.5 + 0.4 * np.sin(i * 0.1 + current_time * 0.8 + effective_rms * 5.0 + random.uniform(-0.5, 0.5))))
+            y_pos = int(height * (0.5 + 0.4 * np.cos(i * 0.15 + current_time * 0.7 + effective_rms * 5.0 + random.uniform(-0.5, 0.5))))
             
             # Applica una dispersione casuale e modulata dal BPM
-            x_pos += int(random.uniform(-1, 1) * 50 * bpm_dispersion * (1 + effective_rms))
-            y_pos += int(random.uniform(-1, 1) * 50 * bpm_dispersion * (1 + effective_rms))
+            x_pos += int(random.uniform(-1, 1) * 70 * bpm_dispersion * (1 + effective_rms * 2)) # Aumentata la casualità
+            y_pos += int(random.uniform(-1, 1) * 70 * bpm_dispersion * (1 + effective_rms * 2))
 
             # Assicurati che le particelle rimangano entro i bordi del frame
             x_pos = np.clip(x_pos, 0, width - 1)
             y_pos = np.clip(y_pos, 0, height - 1)
 
-            # Dimensione e opacità delle particelle
-            # Più piccole e meno visibili con basso RMS, più grandi e luminose con alto RMS/beat
-            particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5))
+            # Dimensione delle particelle con un fattore casuale aggiuntivo
+            particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5 + random.uniform(0, particles_settings['randomness_scale'])))
             
             # Colore delle particelle: usa effective_pattern_color se freq_colors attivi, altrimenti bianco
             particle_color = effective_pattern_color if color_settings['use_frequency_colors'] else (255, 255, 255)
@@ -432,18 +428,18 @@ selected_pattern_mode = pattern_options[selected_pattern_name]
 # Movement settings
 st.sidebar.header("🎬 Movimento")
 movement_scale = st.sidebar.slider(
-    "Intensità movimento", 
+    "Intensità movimento (generale)", 
     min_value=0.0, 
     max_value=3.0, 
     value=1.0, 
     step=0.1
 )
 
-# Nuovo slider per lo spessore delle linee (visibile solo per Linee Scomposte)
-if selected_pattern_mode == 5: # Mostra lo slider solo se "Linee Scomposte" è selezionato
-    st.sidebar.subheader("Spessore Linee (Linee Scomposte)")
+# Controlli specifici per "Linee Scomposte"
+if selected_pattern_mode == 5: 
+    st.sidebar.subheader("Linee Scomposte - Controlli")
     line_thickness_control = st.sidebar.slider(
-        "Regola spessore base delle linee",
+        "Spessore base linee",
         min_value=0,
         max_value=10, 
         value=0, 
@@ -451,6 +447,37 @@ if selected_pattern_mode == 5: # Mostra lo slider solo se "Linee Scomposte" è s
     )
 else:
     line_thickness_control = 0 # Imposta a 0 se l'effetto non è Linee Scomposte
+
+# Controlli specifici per "Particelle Reattive"
+particles_settings = {
+    'quantity': 1500, # Valore di default
+    'color_intensity': 1.0, # Valore di default
+    'randomness_scale': 0 # Valore di default
+}
+if selected_pattern_mode == 6:
+    st.sidebar.subheader("Particelle Reattive - Controlli")
+    particles_settings['quantity'] = st.sidebar.slider(
+        "Quantità Particelle",
+        min_value=100,
+        max_value=5000, # Puoi aumentare questo per schermi pieni
+        value=1500, 
+        step=100
+    )
+    particles_settings['color_intensity'] = st.sidebar.slider(
+        "Intensità Colore Particelle",
+        min_value=0.1,
+        max_value=5.0,
+        value=1.0,
+        step=0.1
+    )
+    particles_settings['randomness_scale'] = st.sidebar.slider(
+        "Scala casualità movimento/dimensione",
+        min_value=0,
+        max_value=20,
+        value=0,
+        step=1
+    )
+
 
 # BPM Sync Settings
 st.sidebar.header("🎵 Sincronizzazione BPM")
@@ -542,7 +569,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, line_thickness_control 
+                        selected_pattern_mode, line_thickness_control, particles_settings 
                     )
                     
                     # Write frame
@@ -599,7 +626,7 @@ st.markdown("""
 1. **Carica** un file audio (MP3, WAV, etc.)
 2. **Imposta** formato video
 3. **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)" e "Particelle Reattive".
-4. **Personalizza** intensità movimento, sincronizzazione BPM, spessore linee (se applicabile) e colori.
+4. **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
 5. **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
@@ -611,5 +638,5 @@ st.markdown("""
 ### 🌀 Visualizzazioni disponibili:
 - **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze.
 - **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori reattivi alle frequenze (o bianco/nero per contrasto).
-- **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica.
+- **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento!**
 """)
