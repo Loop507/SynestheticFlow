@@ -7,7 +7,7 @@ import time
 import os
 import subprocess
 from numba import jit
-import random
+import random # Mantenuto per usi specifici non legati alla selezione del pattern mode
 
 # --- CONFIGURAZIONI FORMATO ---
 VIDEO_FORMATS = {
@@ -167,14 +167,17 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    # Determinare il "modo" del pattern basato su beat_intensity e frequenze
-    # La logica è stata affinata per transizioni più evidenti.
-    pattern_mode = 0 # Default mode
+    # Determinare il "modo" del pattern in modo più controllato, senza casualità
+    # Utilizziamo la fase BPM e le frequenze per un cambio più prevedibile e musicale
     
-    # Forte impatto sul beat per un cambiamento visivo netto
-    if is_on_beat and beat_intensity > 0.8 and bmp_settings['enabled']:
-        # Randomizza la modalità o cicla in modo più veloce
-        pattern_mode = int((current_time * 5 + random.random() * 2) % 4) # Veloce cambio di pattern al beat
+    pattern_mode = 0 # Default mode
+
+    # Se c'è un beat forte, possiamo forzare un cambio di pattern per un breve periodo
+    if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
+        # Cicla tra le modalità 1, 2, 3 in base all'indice del beat o un contatore temporale
+        # Questo crea una sequenza controllata anziché casuale.
+        beat_idx = np.searchsorted(beat_times, current_time)
+        pattern_mode = (beat_idx % 3) + 1 # Cicla tra 1, 2, 3
     elif effective_low_freq > 0.2:
         pattern_mode = 1
     elif effective_mid_freq > 0.2:
@@ -182,9 +185,9 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     elif effective_high_freq > 0.2:
         pattern_mode = 3
     else:
-        # Se nessuna condizione è soddisfatta, torna al pattern base o un pattern transitorio
-        pattern_mode = int((current_time * 0.5) % 4) # Variazione lenta quando non ci sono picchi
-
+        # Quando non ci sono picchi, ritorna al pattern base o una variazione lenta
+        pattern_mode = int((current_time * 0.25) % 4) # Variazione lenta e ciclica
+        
     # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
     cell_size_base = 70 
     # Variazione sottile basata sull'RMS, non come uno zoom
@@ -260,25 +263,32 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 if current_border_thickness > 0:
                     cv2.polylines(frame_img, [rotated_rect_points], True, border_color, current_border_thickness)
 
-            elif pattern_mode == 1: # Cerchi che si trasformano in triangoli (o viceversa)
-                # Misura di "trasformazione" basata sulle basse frequenze
-                transform_factor = np.clip(effective_low_freq * 4.0, 0.0, 1.0) # 0=cerchio, 1=triangolo
+            elif pattern_mode == 1: # Cerchi che si trasformano in triangoli (o viceversa) e si deformano
+                # Misura di "trasformazione" basata sulle basse frequenze (più graduale)
+                transform_factor = np.clip(effective_low_freq * 3.0, 0.0, 1.0) # 0=cerchio, 1=triangolo
                 
-                if transform_factor < 0.5: # Disegna cerchio
-                    cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, fill_color, -1)
+                if transform_factor < 0.5: # Disegna cerchio che si deforma
+                    # Deformazione basata sulla fase BPM per un effetto "squeeze" o "stretch"
+                    deform_factor = 1.0 + np.sin(phase * 2) * effective_low_freq * 0.8 # Deforma lungo un asse
+                    cv2.ellipse(frame_img, (cx, cy), 
+                                (int(current_cell_size // 2 * deform_factor), int(current_cell_size // 2 / deform_factor)),
+                                0, 0, 360, fill_color, -1)
                     if current_border_thickness > 0:
-                        cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, border_color, current_border_thickness)
-                else: # Disegna triangolo
+                         cv2.ellipse(frame_img, (cx, cy), 
+                                     (int(current_cell_size // 2 * deform_factor), int(current_cell_size // 2 / deform_factor)),
+                                     0, 0, 360, border_color, current_border_thickness)
+                else: # Disegna triangolo che "pulsa"
+                    pulse_mod = np.sin(phase * 4) * 0.1 * effective_low_freq # Piccola pulsazione
                     pts = np.array([
-                        [x1 + current_cell_size // 2, y1], 
-                        [x1, y2], 
-                        [x2, y2]
+                        [x1 + current_cell_size // 2, y1 - int(current_cell_size * pulse_mod)], 
+                        [x1 - int(current_cell_size * pulse_mod), y2], 
+                        [x2 + int(current_cell_size * pulse_mod), y2]
                     ], np.int32)
                     cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], fill_color)
                     if current_border_thickness > 0:
                         cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, border_color, current_border_thickness)
 
-            elif pattern_mode == 2: # Pattern a scacchiera che cambia colore e si "dissolve"
+            elif pattern_mode == 2: # Pattern a scacchiera che cambia colore e si "dissolve" in linee
                 # Dissoluzione/riapparizione basata sulle medie frequenze
                 dissolve_factor = np.clip(effective_mid_freq * 3.0, 0.0, 1.0)
                 
@@ -287,25 +297,44 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 else:
                     current_fill = (border_color[0] * dissolve_factor, border_color[1] * dissolve_factor, border_color[2] * dissolve_factor)
                 
-                cv2.rectangle(frame_img, (x1, y1), (x2, y2), current_fill, -1)
+                # Sostituisci il quadrato con linee se dissolve_factor è alto
+                if dissolve_factor > 0.6:
+                    line_count = int(dissolve_factor * 5) # Numero di linee che appaiono
+                    for i in range(line_count):
+                        y_line = y1 + int(current_cell_size * (i / line_count))
+                        cv2.line(frame_img, (x1, y_line), (x2, y_line), current_fill, max(1, current_border_thickness - 1))
+                else:
+                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), current_fill, -1)
                 
-                # Aggiungi piccoli cerchi o rettangoli casuali per l'effetto "glitch"
-                if random.random() < dissolve_factor * 0.2:
+                # Aggiungi piccoli artefatti per l'effetto "glitch" (meno random, più legati al dissolve_factor)
+                if random.random() < dissolve_factor * 0.3: # Random solo per la presenza, non per il pattern
                     rand_x = random.randint(x1, x2 - 5)
                     rand_y = random.randint(y1, y2 - 5)
                     rand_size = random.randint(5, 15)
                     cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), fill_color, -1)
 
 
-            elif pattern_mode == 3: # Linee orizzontali/verticali che si ispessiscono e si spostano
+            elif pattern_mode == 3: # Linee orizzontali/verticali che si ispessiscono e si trasformano in un cross
                 # Spostamento e spessore basati sulle alte frequenze
                 line_thickness_mod = int(effective_high_freq * 10)
                 line_offset = int(np.sin(current_time * 6 + x * 0.01 + y * 0.01) * effective_high_freq * 30)
                 
-                if (x // current_cell_size) % 2 == 0: # Linee verticali
-                    cv2.line(frame_img, (cx + line_offset, y1), (cx + line_offset, y2), fill_color, current_border_thickness + line_thickness_mod)
-                else: # Linee orizzontali
-                    cv2.line(frame_img, (x1, cy + line_offset), (x2, cy + line_offset), fill_color, current_border_thickness + line_thickness_mod)
+                # Transizione da singola linea a "cross" o griglia
+                cross_transform_factor = np.clip(effective_high_freq * 4.0, 0.0, 1.0)
+                
+                if cross_transform_factor < 0.5: # Disegna linee singole
+                    if (x // current_cell_size) % 2 == 0: # Linee verticali
+                        cv2.line(frame_img, (cx + line_offset, y1), (cx + line_offset, y2), fill_color, current_border_thickness + line_thickness_mod)
+                    else: # Linee orizzontali
+                        cv2.line(frame_img, (x1, cy + line_offset), (x2, cy + line_offset), fill_color, current_border_thickness + line_thickness_mod)
+                else: # Trasforma in una "X" o un piccolo quadrato rotante
+                    # Disegna una X
+                    cv2.line(frame_img, (x1, y1), (x2, y2), fill_color, current_border_thickness + line_thickness_mod)
+                    cv2.line(frame_img, (x1, y2), (x2, y1), fill_color, current_border_thickness + line_thickness_mod)
+                    # Oppure un piccolo quadrato al centro che pulsa
+                    pulse_size = int(current_cell_size * 0.3 * cross_transform_factor)
+                    cv2.rectangle(frame_img, (cx - pulse_size // 2, cy - pulse_size // 2), 
+                                  (cx + pulse_size // 2, cy + pulse_size // 2), border_color, -1)
                 
                 # Aggiungi un piccolo punto al centro con un colore complementare
                 cv2.circle(frame_img, (cx, cy), int(2 + effective_high_freq * 5), border_color, -1)
