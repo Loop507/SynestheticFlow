@@ -184,31 +184,25 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     current_border_thickness = max(1, min(15, current_border_thickness))
 
 
-    # Logica per i colori reattivi alle frequenze
+    # Logica per i colori reattivi alle frequenze (generale per Burst e Linee Scomposte)
     base_fill_color_bgr = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
     
-    # Se i colori di frequenza sono abilitati, calcola un colore dinamico
+    effective_pattern_color_for_burst_and_lines = (0,0,0) # Default
     if color_settings['use_frequency_colors']:
         low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
         mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
         high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
-        # Applica l'intensità del colore per le particelle
-        color_intensity_multiplier = 1.0
-        if pattern_mode == 6: # Se sono particelle, usa il loro slider di intensità
-            color_intensity_multiplier = particles_settings['color_intensity']
-
-        # Mix i colori in base all'intensità delle frequenze e il nuovo multiplier
+        # Mix i colori in base all'intensità delle frequenze (per effetti non-particelle)
         mixed_dynamic_color = (
-            low_bgr * effective_low_freq * 5.0 * color_intensity_multiplier +
-            mid_bgr * effective_mid_freq * 5.0 * color_intensity_multiplier +
-            high_bgr * effective_high_freq * 5.0 * color_intensity_multiplier
+            low_bgr * effective_low_freq * 5.0 +
+            mid_bgr * effective_mid_freq * 5.0 +
+            high_bgr * effective_high_freq * 5.0
         )
-        # Assicurati che il colore non superi 255 e abbia una base del colore di sfondo
         mixed_dynamic_color = np.clip(mixed_dynamic_color + base_fill_color_bgr * 0.2, 0, 255).astype(np.uint8) 
-        effective_pattern_color = tuple(mixed_dynamic_color.tolist())
+        effective_pattern_color_for_burst_and_lines = tuple(mixed_dynamic_color.tolist())
     else: # Usa i colori di base se non si usano i colori di frequenza
-        effective_pattern_color = hex_to_bgr(color_settings['background_color']) 
+        effective_pattern_color_for_burst_and_lines = hex_to_bgr(color_settings['background_color']) 
 
 
     # --- Differenti modalità di pattern per le trasformazioni ---
@@ -230,9 +224,9 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Scegli casualmente il tipo di forma
                     shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
                     
-                    # Colore randomizzato che deriva da effective_pattern_color
+                    # Colore randomizzato che deriva da effective_pattern_color_for_burst_and_lines
                     rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
-                    rand_color = tuple(np.clip(np.array(effective_pattern_color) + rand_color_mod, 0, 255).tolist())
+                    rand_color = tuple(np.clip(np.array(effective_pattern_color_for_burst_and_lines) + rand_color_mod, 0, 255).tolist())
 
                     # Posizione casuale all'interno della cella (o anche fuori leggermente)
                     rand_x = x1 + random.randint(-current_cell_size // 4, current_cell_size)
@@ -274,9 +268,9 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                 bg_for_lines = hex_to_bgr(color_settings['background_color'])
                 cv2.rectangle(frame_img, (x1, y1), (x2, y2), bg_for_lines, -1)
 
-                # Colore delle linee: usa effective_pattern_color se freq_colors attivi, altrimenti bianco/nero
+                # Colore delle linee: usa effective_pattern_color_for_burst_and_lines se freq_colors attivi, altrimenti bianco/nero
                 if color_settings['use_frequency_colors']:
-                    line_color_for_lines = effective_pattern_color
+                    line_color_for_lines = effective_pattern_color_for_burst_and_lines
                 else:
                     line_color_for_lines = (0, 0, 0) # Default: Linee nere
                     if np.mean(bg_for_lines) < 50: # Se il colore di sfondo è quasi nero
@@ -327,6 +321,11 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
         # Reattività BPM sul raggruppamento/dispersione
         bpm_dispersion = apply_bpm_movement_modulation(1.0, phase, beat_intensity, 'pulse', bmp_settings) * 0.5 # Aumenta la dispersione sul beat
 
+        # Pre-calcola i colori base per le frequenze per le particelle
+        base_low_bgr_p = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
+        base_mid_bgr_p = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
+        base_high_bgr_p = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
+
         for i in range(num_particles_to_draw):
             # Posizione iniziale casuale per le particelle
             # Modulata da RMS e tempo per un movimento più interessante
@@ -345,8 +344,44 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             # Dimensione delle particelle con un fattore casuale aggiuntivo
             particle_size = max(1, int(1 + effective_rms * 10 + beat_intensity * bmp_settings['beat_response_intensity'] * 5 + random.uniform(0, particles_settings['randomness_scale'])))
             
-            # Colore delle particelle: usa effective_pattern_color se freq_colors attivi, altrimenti bianco
-            particle_color = effective_pattern_color if color_settings['use_frequency_colors'] else (255, 255, 255)
+            # Colore delle particelle: Logica per colori individuali basati su frequenza
+            if color_settings['use_frequency_colors']:
+                # Calcola "influenza" o "peso" di ciascuna banda di frequenza
+                low_weight = effective_low_freq * 5.0 
+                mid_weight = effective_mid_freq * 5.0 
+                high_weight = effective_high_freq * 5.0 
+
+                total_weight = low_weight + mid_weight + high_weight
+
+                current_particle_color = (255, 255, 255) # Default white if no sound or weights
+
+                if total_weight > 0:
+                    # Normalizza i pesi per usarli come probabilità
+                    prob_low = low_weight / total_weight
+                    prob_mid = mid_weight / total_weight
+                    # prob_high = high_weight / total_weight (implicito: 1 - prob_low - prob_mid)
+
+                    rand_choice = random.uniform(0, 1)
+                    
+                    # Scegli un colore per questa singola particella in base alla dominanza delle frequenze
+                    selected_base_color = None
+                    if rand_choice < prob_low:
+                        selected_base_color = base_low_bgr
+                    elif rand_choice < prob_low + prob_mid:
+                        selected_base_color = base_mid_bgr
+                    else:
+                        selected_base_color = base_high_bgr
+                    
+                    # Applica l'intensità del colore e una leggera casualità
+                    if selected_base_color is not None:
+                        # Aggiungiamo un random per la luminosità/saturazione del colore selezionato
+                        color_mod_factor = particles_settings['color_intensity'] * (1.0 + random.uniform(-0.2, 0.2)) # Aggiunta casualità
+                        current_particle_color = tuple(np.clip(selected_base_color * color_mod_factor, 0, 255).astype(np.uint8).tolist())
+                
+                particle_color = current_particle_color
+            else:
+                # Se i colori di frequenza non sono usati, tutte le particelle sono bianche
+                particle_color = (255, 255, 255)
 
             # Disegna la particella come un cerchio
             cv2.circle(frame_img, (x_pos, y_pos), particle_size, particle_color, -1) # -1 per riempire il cerchio
@@ -623,20 +658,20 @@ else:
 st.markdown("---")
 st.markdown("""
 ### 📖 Come usare:
-1. **Carica** un file audio (MP3, WAV, etc.)
-2. **Imposta** formato video
-3. **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)" e "Particelle Reattive".
-4. **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
-5. **Genera** il tuo video artistico!
+1.  **Carica** un file audio (MP3, WAV, etc.)
+2.  **Imposta** formato video
+3.  **Scegli** la visualizzazione tra "Geometric Random Burst", "Linee Scomposte (Glitch)" e "Particelle Reattive".
+4.  **Personalizza** intensità movimento, sincronizzazione BPM, **controlli specifici per ogni effetto** e colori.
+5.  **Genera** il tuo video artistico!
 
 ### 🎵 Caratteristiche BPM:
-- **Sincronizzazione automatica** sul tempo del brano
-- **Modulazione dinamica** di zoom, movimento e colori
-- **Diversi tipi di sync**: beat principale, mezzi beat, terzine
-- **Transizioni smooth** per effetti fluidi
+-   **Sincronizzazione automatica** sul tempo del brano
+-   **Modulazione dinamica** di zoom, movimento e colori
+-   **Diversi tipi di sync**: beat principale, mezzi beat, terzine
+-   **Transizioni smooth** per effetti fluidi
 
 ### 🌀 Visualizzazioni disponibili:
-- **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze.
-- **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori reattivi alle frequenze (o bianco/nero per contrasto).
-- **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento!**
+-   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze.
+-   **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori reattivi alle frequenze (o bianco/nero per contrasto).
+-   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
 """)
