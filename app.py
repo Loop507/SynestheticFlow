@@ -366,11 +366,11 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Scegli un colore per questa singola particella in base alla dominanza delle frequenze
                     selected_base_color = None
                     if rand_choice < prob_low:
-                        selected_base_color = base_low_bgr
+                        selected_base_color = base_low_bgr_p # Corretto qui
                     elif rand_choice < prob_low + prob_mid:
-                        selected_base_color = base_mid_bgr
+                        selected_base_color = base_mid_bgr_p # Corretto qui
                     else:
-                        selected_base_color = base_high_bgr
+                        selected_base_color = base_high_bgr_p # Corretto qui
                     
                     # Applica l'intensità del colore e una leggera casualità
                     if selected_base_color is not None:
