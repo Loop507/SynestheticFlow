@@ -698,9 +698,6 @@ if uploaded_file is not None:
                         mime="video/mp4"
                     )
                     
-                    # Show video preview
-                    st.video(final_output_path)
-                    
                 else:
                     st.error(f"Errore nel merge: {message}")
                     
@@ -709,26 +706,3 @@ if uploaded_file is not None:
                 
 else:
     st.info("👆 Carica un file audio per iniziare")
-
-# Footer info
-st.markdown("---")
-st.markdown("""
-### 📖 Come usare:
-1. **Carica** un file audio (MP3, WAV, etc.)
-2. **Scegli** formato video e tipo di frattale
-3. **Personalizza** impostazioni movimento e colori
-4. **Abilita** sincronizzazione BPM per effetti reattivi
-5. **Genera** il tuo video artistico!
-
-### 🎵 Caratteristiche BPM:
-- **Sincronizzazione automatica** sul tempo del brano
-- **Modulazione dinamica** di zoom, movimento e colori
-- **Diversi tipi di sync**: beat principale, mezzi beat, terzine
-- **Transizioni smooth** per effetti fluidi
-
-### 🌀 Frattali disponibili:
-- **Mandelbrot**: Il classico set frattale
-- **Julia**: Variazioni dinamiche e colorate  
-- **Burning Ship**: Forme organiche "fiammeggianti"
-- **Sierpinski**: Pattern geometrici ricorsivi
-""")
