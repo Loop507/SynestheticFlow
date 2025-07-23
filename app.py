@@ -363,7 +363,7 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     
     # Zoom sincronizzato sui BPM
     base_zoom = 1.5
-    bmp_zoom_modulation = apply_bmp_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.5
+    bmp_zoom_modulation = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.5
     audio_zoom_influence = rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor
     zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.3
     
@@ -371,8 +371,8 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     base_move_x = -0.75
     base_move_y = 0.05
     
-    bmp_move_x = apply_bmp_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
-    bmp_move_y = apply_bmp_movement_modulation(0, phase * 1.3, beat_intensity, 'cosine', bmp_settings) * 0.08
+    bmp_move_x = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
+    bmp_move_y = apply_bpm_movement_modulation(0, phase * 1.3, beat_intensity, 'cosine', bmp_settings) * 0.08
     
     move_x = base_move_x + bmp_move_x + mid_freq * 0.03 * movement_scale_factor
     move_y = base_move_y + bmp_move_y + high_freq * 0.025 * movement_scale_factor
@@ -399,26 +399,26 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     """Julia Set con sincronizzazione BPM avanzata"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     
-    phase, is_on_beat, beat_intensity = calculate_bmp_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
+    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
     
     # Iterazioni con modulazione BPM
     base_max_iter = 70 + rms * 80 * movement_scale_factor
-    max_iter = int(apply_bmp_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
+    max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
     max_iter = max(50, min(150, max_iter))
     
     # Parametri C di Julia sincronizzati
     base_c_real = -0.7
     base_c_imag = 0.27015
     
-    bmp_c_real_mod = apply_bmp_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
-    bmp_c_imag_mod = apply_bmp_movement_modulation(0, phase * 0.8, beat_intensity, 'cosine', bmp_settings) * 0.08
+    bmp_c_real_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
+    bmp_c_imag_mod = apply_bpm_movement_modulation(0, phase * 0.8, beat_intensity, 'cosine', bmp_settings) * 0.08
     
     c_real_base = base_c_real + bmp_c_real_mod
     c_imag_base = base_c_imag + bmp_c_imag_mod
     
     # Zoom con BPM sync
     base_zoom = 1.0
-    bmp_zoom_mod = apply_bmp_movement_modulation(0, phase * 1.5, beat_intensity, 'sine', bmp_settings) * 0.3
+    bmp_zoom_mod = apply_bpm_movement_modulation(0, phase * 1.5, beat_intensity, 'sine', bmp_settings) * 0.3
     zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + high_freq * 2.0 * movement_scale_factor
     
     # Audio modulation con BPM
@@ -435,23 +435,23 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     
     return frame_img
 
-def draw_burning_ship_fractal_bmp_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
+def draw_burning_ship_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
     """Burning Ship con sincronizzazione BPM"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     
-    phase, is_on_beat, beat_intensity = calculate_bmp_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
+    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
     
     base_max_iter = 60 + rms * 60 * movement_scale_factor
-    max_iter = int(apply_bmp_movement_modulation(base_max_iter, phase, beat_intensity, 'sawtooth', bmp_settings))
+    max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'sawtooth', bmp_settings))
     max_iter = max(40, min(120, max_iter))
     
     base_zoom = 1.0
-    bmp_zoom_mod = apply_bmp_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 0.2
+    bmp_zoom_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 0.2
     zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + mid_freq * 2.0 * movement_scale_factor
     
     base_move_x, base_move_y = -1.8, -0.08
-    bmp_move_x = apply_bmp_movement_modulation(0, phase * 1.2, beat_intensity, 'sine', bmp_settings) * 0.05
-    bmp_move_y = apply_bmp_movement_modulation(0, phase * 0.9, beat_intensity, 'cosine', bmp_settings) * 0.03
+    bmp_move_x = apply_bpm_movement_modulation(0, phase * 1.2, beat_intensity, 'sine', bmp_settings) * 0.05
+    bmp_move_y = apply_bpm_movement_modulation(0, phase * 0.9, beat_intensity, 'cosine', bmp_settings) * 0.03
     
     move_x = base_move_x + bmp_move_x
     move_y = base_move_y + bmp_move_y
@@ -468,14 +468,14 @@ def draw_burning_ship_fractal_bmp_sync(frame_img, width, height, rms, current_ti
     
     return frame_img
 
-def draw_sierpinski_fractal_bmp_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
+def draw_sierpinski_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
     """Sierpinski Carpet con sincronizzazione BPM"""
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     
-    phase, is_on_beat, beat_intensity = calculate_bmp_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
+    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
     
     base_iterations = 3 + int(rms * 3 * movement_scale_factor) + int(low_freq * 2 * movement_scale_factor)
-    bmp_iter_mod = apply_bmp_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 2
+    bmp_iter_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 2
     iterations = int(base_iterations + bmp_iter_mod)
     
     base_audio_scale = (rms + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
@@ -557,7 +557,7 @@ movement_scale = st.sidebar.slider(
     step=0.1
 )
 
-# BMP Sync Settings
+# BPM Sync Settings
 st.sidebar.header("🎵 Sincronizzazione BPM")
 bmp_settings = {
     'enabled': st.sidebar.checkbox("Abilita sync BPM", value=True),
@@ -648,17 +648,17 @@ if uploaded_file is not None:
                             tempo, freq_data, color_settings, movement_scale, bmp_settings
                         )
                     elif fractal_type == "Julia":
-                        frame_img = draw_julia_fractal_bmp_sync(
+                        frame_img = draw_julia_fractal_bpm_sync(
                             frame_img, width, height, rms, current_time, beat_times, 
                             tempo, freq_data, color_settings, movement_scale, bmp_settings
                         )
                     elif fractal_type == "Burning Ship":
-                        frame_img = draw_burning_ship_fractal_bmp_sync(
+                        frame_img = draw_burning_ship_fractal_bpm_sync(
                             frame_img, width, height, rms, current_time, beat_times, 
                             tempo, freq_data, color_settings, movement_scale, bmp_settings
                         )
                     elif fractal_type == "Sierpinski":
-                        frame_img = draw_sierpinski_fractal_bmp_sync(
+                        frame_img = draw_sierpinski_fractal_bpm_sync(
                             frame_img, width, height, rms, current_time, beat_times, 
                             tempo, freq_data, color_settings, movement_scale, bmp_settings
                         )
@@ -732,12 +732,3 @@ st.markdown("""
 - **Burning Ship**: Forme organiche "fiammeggianti"
 - **Sierpinski**: Pattern geometrici ricorsivi
 """)
-
-# Fix for the typo in function names
-def calculate_bmp_phase(current_time, tempo, sync_type, beat_times, bmp_settings):
-    """Fixed function name - was calculate_bpm_phase"""
-    return calculate_bpm_phase(current_time, tempo, sync_type, beat_times, bmp_settings)
-
-def apply_bmp_movement_modulation(base_value, phase, beat_intensity, modulation_type, bmp_settings):
-    """Fixed function name - was apply_bpm_movement_modulation"""
-    return apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_type, bmp_settings)
