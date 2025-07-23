@@ -155,7 +155,7 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     return float(base_value + modulation)
 
 # --- FUNZIONE PER PATTERN GEOMETRICO ---
-def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, line_thickness_control, particles_settings, burst_settings):
+def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings, selected_pattern_mode, glitch_settings, particles_settings, burst_settings):
     """
     Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     Ora seleziona il pattern in base a `selected_pattern_mode`.
@@ -200,6 +200,7 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             if total_weight > 0:
                 prob_low = low_weight / total_weight
                 prob_mid = mid_weight / total_weight
+
                 rand_choice = random.uniform(0, 1)
                 
                 selected_base_color = None
@@ -238,8 +239,8 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     # Scegli il tipo di forma
                     shape_type = selected_figure_type
                     if selected_figure_type == 'Casuale':
-                        shape_type = random.choice(['circle', 'rectangle', 'line', 'triangle'])
-                    
+                        shape_type = random.choice(['Cerchio', 'Rettangolo', 'Linea', 'Triangolo']) # Aggiornato nomi
+
                     current_element_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else hex_to_bgr(color_settings['background_color']) 
                     if not color_settings['use_frequency_colors']: # Se i colori freq non sono usati, randomizza il colore di sfondo leggermente
                         rand_color_mod = np.array([random.randint(-30, 30) for _ in range(3)])
@@ -254,15 +255,15 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                     rand_size = int(random.uniform(5, current_cell_size * 0.8) * (1 + effective_rms * 0.5))
                     rand_thickness = int(random.uniform(1, current_border_thickness * 2))
                     
-                    if shape_type == 'Cerchio': # Cambiato da 'circle' a 'Cerchio' per coerenza con l'UI
+                    if shape_type == 'Cerchio':
                         cv2.circle(frame_img, (rand_x, rand_y), rand_size // 2, current_element_color, rand_thickness)
-                    elif shape_type == 'Rettangolo': # Cambiato da 'rectangle' a 'Rettangolo'
+                    elif shape_type == 'Rettangolo':
                         cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), current_element_color, rand_thickness)
-                    elif shape_type == 'Linea': # Cambiato da 'line' a 'Linea'
+                    elif shape_type == 'Linea':
                         x_end = rand_x + int(random.uniform(-rand_size, rand_size))
                         y_end = rand_y + int(random.uniform(-rand_size, rand_size))
                         cv2.line(frame_img, (rand_x, rand_y), (x_end, y_end), current_element_color, rand_thickness)
-                    elif shape_type == 'Triangolo': # Cambiato da 'triangle' a 'Triangolo'
+                    elif shape_type == 'Triangolo':
                         p1 = (rand_x, rand_y)
                         p2 = (rand_x + int(rand_size * random.uniform(0.5, 1.5)), rand_y + int(rand_size * random.uniform(-0.5, 0.5)))
                         p3 = (rand_x + int(rand_size * random.uniform(-0.5, 0.5)), rand_y + int(rand_size * random.uniform(0.5, 1.5)))
@@ -273,63 +274,94 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], current_element_color)
             
     elif pattern_mode == 5: # Effetto "Linee Scomposte"
-        # Applica il controllo dello spessore delle linee dal nuovo slider qui specificamente
-        current_line_thickness_glitch = int(border_thickness_base + border_thickness_mod + line_thickness_control)
+        current_line_thickness_glitch = int(border_thickness_base + border_thickness_mod + glitch_settings['line_thickness'])
         current_line_thickness_glitch = max(1, min(15, current_line_thickness_glitch)) 
 
-        for y in range(0, height, current_cell_size):
-            for x in range(0, width, current_cell_size):
-                x1, y1 = x, y
-                x2, y2 = x + current_cell_size, y + current_cell_size
+        line_orientation = glitch_settings['orientation']
+
+        for y_cell in range(0, height, current_cell_size):
+            for x_cell in range(0, width, current_cell_size):
+                x1_cell, y1_cell = x_cell, y_cell
+                x2_cell, y2_cell = x_cell + current_cell_size, y_cell + current_cell_size
                 
                 # Sfondo della cella: sempre il colore di sfondo scelto
                 bg_for_lines = hex_to_bgr(color_settings['background_color'])
-                cv2.rectangle(frame_img, (x1, y1), (x2, y2), bg_for_lines, -1)
+                cv2.rectangle(frame_img, (x1_cell, y1_cell), (x2_cell, y2_cell), bg_for_lines, -1)
 
                 # Intensità di "rottura" basata sulle alte frequenze e RMS
                 break_intensity = np.clip(effective_high_freq * 4.0 + effective_rms * 2.0, 0.0, 1.0)
                 
-                # Numero di linee verticali all'interno della cella
-                num_lines = max(2, int(current_cell_size / 15)) 
-                
-                for i in range(num_lines):
-                    line_x = x1 + int(i * (current_cell_size / num_lines))
-                    
-                    # Logica per colori individuali basati su frequenza per questa linea/segmento
-                    line_color_for_lines = (255, 255, 255) # Default white
-                    if color_settings['use_frequency_colors']:
-                        line_color_for_lines = get_dynamic_element_color()
-                    else:
-                        # Se i colori di frequenza non sono usati, usa nero/bianco per contrasto con sfondo
-                        line_color_for_lines = (0, 0, 0) # Default: Linee nere
-                        if np.mean(bg_for_lines) < 50: # Se il colore di sfondo è quasi nero
-                            line_color_for_lines = (255, 255, 255) # Linee bianche
-                    
-                    # Se l'intensità di rottura è alta, spezziamo la linea
-                    if random.random() < break_intensity * 0.7: # Probabilità di rottura
-                        num_segments = max(2, int(break_intensity * 5)) # Più forte = più segmenti
-                        segment_height = current_cell_size / num_segments
-                        
-                        for s in range(num_segments):
-                            y_start_segment = y1 + int(s * segment_height)
-                            y_end_segment = y1 + int((s + 1) * segment_height)
-                            
-                            # Aggiungi un offset casuale orizzontale per l'effetto "glitch"
-                            glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
-                            
-                            # Riduci la lunghezza del segmento casualmente per "spazi"
-                            segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
-                            y_start_segment += int((1 - segment_shrink) * segment_height / 2)
-                            y_end_segment -= int((1 - segment_shrink) * segment_height / 2)
+                # Scegli l'orientamento per questa cella se è "Entrambi"
+                current_orientation_choice = line_orientation
+                if line_orientation == 'Entrambi':
+                    current_orientation_choice = random.choice(['Verticale', 'Orizzontale'])
 
-                            cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
-                                     (line_x + glitch_offset, y_end_segment), 
-                                     line_color_for_lines, max(1, current_line_thickness_glitch // 2))
-                    else:
-                        # Linea intera (o leggermente spostata)
-                        glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
-                        cv2.line(frame_img, (line_x + glitch_offset, y1), (line_x + glitch_offset, y2), 
-                                 line_color_for_lines, current_line_thickness_glitch)
+                if current_orientation_choice == 'Verticale' or current_orientation_choice == 'Entrambi':
+                    # Numero di linee verticali all'interno della cella
+                    num_lines_vertical = max(2, int(current_cell_size / 15)) 
+                    
+                    for i in range(num_lines_vertical):
+                        line_x = x1_cell + int(i * (current_cell_size / num_lines_vertical))
+                        
+                        line_color_for_lines = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ( (0, 0, 0) if np.mean(bg_for_lines) >= 50 else (255, 255, 255) )
+                        
+                        # Se l'intensità di rottura è alta, spezziamo la linea
+                        if random.random() < break_intensity * 0.7: # Probabilità di rottura
+                            num_segments = max(2, int(break_intensity * 5)) # Più forte = più segmenti
+                            segment_height = current_cell_size / num_segments
+                            
+                            for s in range(num_segments):
+                                y_start_segment = y1_cell + int(s * segment_height)
+                                y_end_segment = y1_cell + int((s + 1) * segment_height)
+                                
+                                # Aggiungi un offset casuale orizzontale per l'effetto "glitch"
+                                glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
+                                
+                                # Riduci la lunghezza del segmento casualmente per "spazi"
+                                segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
+                                y_start_segment += int((1 - segment_shrink) * segment_height / 2)
+                                y_end_segment -= int((1 - segment_shrink) * segment_height / 2)
+
+                                cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
+                                         (line_x + glitch_offset, y_end_segment), 
+                                         line_color_for_lines, max(1, current_line_thickness_glitch // 2))
+                        else:
+                            # Linea intera (o leggermente spostata)
+                            glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
+                            cv2.line(frame_img, (line_x + glitch_offset, y1_cell), (line_x + glitch_offset, y2_cell), 
+                                     line_color_for_lines, current_line_thickness_glitch)
+                
+                if current_orientation_choice == 'Orizzontale' or current_orientation_choice == 'Entrambi':
+                    # Numero di linee orizzontali all'interno della cella
+                    num_lines_horizontal = max(2, int(current_cell_size / 15))
+
+                    for i in range(num_lines_horizontal):
+                        line_y = y1_cell + int(i * (current_cell_size / num_lines_horizontal))
+
+                        line_color_for_lines = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ( (0, 0, 0) if np.mean(bg_for_lines) >= 50 else (255, 255, 255) )
+
+                        if random.random() < break_intensity * 0.7:
+                            num_segments = max(2, int(break_intensity * 5))
+                            segment_width = current_cell_size / num_segments
+
+                            for s in range(num_segments):
+                                x_start_segment = x1_cell + int(s * segment_width)
+                                x_end_segment = x1_cell + int((s + 1) * segment_width)
+
+                                glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
+
+                                segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
+                                x_start_segment += int((1 - segment_shrink) * segment_width / 2)
+                                x_end_segment -= int((1 - segment_shrink) * segment_width / 2)
+                                
+                                cv2.line(frame_img, (x_start_segment, line_y + glitch_offset),
+                                         (x_end_segment, line_y + glitch_offset),
+                                         line_color_for_lines, max(1, current_line_thickness_glitch // 2))
+                        else:
+                            glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
+                            cv2.line(frame_img, (x1_cell, line_y + glitch_offset), (x2_cell, line_y + glitch_offset),
+                                     line_color_for_lines, current_line_thickness_glitch)
+
 
     elif pattern_mode == 6: # Effetto "Particelle Reattive"
         num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
@@ -456,7 +488,7 @@ pattern_options = {
     "Geometric Random Burst": 4,
     "Linee Scomposte (Glitch)": 5,
     "Particelle Reattive": 6,
-    "Griglia Geometrica": 7 # Nuovo Pattern
+    "Griglia Geometrica": 7 
 }
 selected_pattern_name = st.sidebar.selectbox(
     "Scegli visualizzazione:",
@@ -477,16 +509,24 @@ movement_scale = st.sidebar.slider(
 )
 
 # Controlli specifici per "Linee Scomposte"
-line_thickness_control = 0
+glitch_settings = {
+    'line_thickness': 0,
+    'orientation': 'Verticale' # Default
+}
 if selected_pattern_mode == 5: 
     st.sidebar.subheader("Linee Scomposte - Controlli")
-    line_thickness_control = st.sidebar.slider(
+    glitch_settings['line_thickness'] = st.sidebar.slider(
         "Spessore base linee",
         min_value=0,
         max_value=10, 
         value=0, 
         step=1
     )
+    glitch_settings['orientation'] = st.sidebar.selectbox(
+        "Orientamento Linee",
+        ['Verticale', 'Orizzontale', 'Entrambi']
+    )
+
 
 # Controlli specifici per "Particelle Reattive"
 particles_settings = {
@@ -627,7 +667,7 @@ if uploaded_file is not None:
                     frame_img = draw_geometric_pattern_bpm_sync(
                         frame_img, width, height, rms, current_time, beat_times, 
                         tempo, freq_data, color_settings, movement_scale, bmp_settings, 
-                        selected_pattern_mode, line_thickness_control, particles_settings, burst_settings
+                        selected_pattern_mode, glitch_settings, particles_settings, burst_settings
                     )
                     
                     # Write frame
@@ -695,7 +735,7 @@ st.markdown("""
 
 ### 🌀 Visualizzazioni disponibili:
 -   **Geometric Random Burst**: Un'esplosione dinamica di forme geometriche casuali che reagiscono all'audio e ai colori delle frequenze. Ora con **colori per elemento basati sulle frequenze, controllo della quantità e selezione del tipo di figura!**
--   **Linee Scomposte (Glitch)**: Linee verticali che si "rompono" e glitchano in base all'audio, ora con colori per elemento reattivi alle frequenze (o bianco/nero per contrasto).
+-   **Linee Scomposte (Glitch)**: Linee che si "rompono" e glitchano in base all'audio. Ora con **colori per elemento reattivi alle frequenze (o bianco/nero per contrasto) e scelta dell'orientamento (verticale, orizzontale o entrambi)!**
 -   **Particelle Reattive**: Una nuvola di particelle dinamiche che si muovono, pulsano e cambiano colore in base al volume e alle frequenze dell'audio, creando un'esperienza fluida e organica. Ora con **controllo su quantità, intensità del colore e casualità del movimento, e colori individuali per particella in base alla frequenza!**
 -   **Griglia Geometrica**: Una griglia di quadrati che reagisce all'audio e ai BPM, con ogni cella che cambia colore in base alla dominanza delle frequenze, creando un effetto strutturato ma dinamico.
 """)
