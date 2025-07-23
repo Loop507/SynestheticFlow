@@ -166,9 +166,9 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
             c_real = (x - width/2) / (zoom * width/4) + move_x
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
-            # Aggiunta influenza audio - modulazione sottile
-            c_real += audio_influence * 0.005 * np.sin(x * 0.001)
-            c_imag += audio_influence * 0.005 * np.cos(y * 0.001)
+            # AUMENTA L'INFLUENZA AUDIO QUI per una trasformazione più marcata
+            c_real += audio_influence * 0.05 * np.sin(x * 0.001) # AUMENTATO DA 0.005
+            c_imag += audio_influence * 0.05 * np.cos(y * 0.001) # AUMENTATO DA 0.005
 
             z_real = 0.0
             z_imag = 0.0
@@ -361,21 +361,21 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
     max_iter = max(50, min(200, max_iter))
     
-    # Zoom sincronizzato sui BPM
+    # Zoom sincronizzato sui BPM (maggiore influenza delle frequenze)
     base_zoom = 1.5
     bmp_zoom_modulation = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.5
-    audio_zoom_influence = rms * 5 * movement_scale_factor + low_freq * 10 * movement_scale_factor
-    zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.3
+    audio_zoom_influence = rms * 5 * movement_scale_factor + low_freq * 20 * movement_scale_factor # AUMENTATO DA 10
+    zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.5 # AUMENTATO DA 0.3
     
-    # Movimento sincronizzato
+    # Movimento sincronizzato (maggiore influenza delle frequenze)
     base_move_x = -0.75
     base_move_y = 0.05
     
     bmp_move_x = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
     bmp_move_y = apply_bpm_movement_modulation(0, phase * 1.3, beat_intensity, 'cosine', bmp_settings) * 0.08
     
-    move_x = base_move_x + bmp_move_x + mid_freq * 0.03 * movement_scale_factor
-    move_y = base_move_y + bmp_move_y + high_freq * 0.025 * movement_scale_factor
+    move_x = base_move_x + bmp_move_x + mid_freq * 0.1 * movement_scale_factor # AUMENTATO DA 0.03
+    move_y = base_move_y + bmp_move_y + high_freq * 0.08 * movement_scale_factor # AUMENTATO DA 0.025
     
     # Influenza audio modulata dai BPM
     base_audio_influence = (rms * 2.0 + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
@@ -406,23 +406,23 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
     max_iter = max(50, min(150, max_iter))
     
-    # Parametri C di Julia sincronizzati
+    # Parametri C di Julia sincronizzati (maggiore influenza delle frequenze)
     base_c_real = -0.7
     base_c_imag = 0.27015
     
     bmp_c_real_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
     bmp_c_imag_mod = apply_bpm_movement_modulation(0, phase * 0.8, beat_intensity, 'cosine', bmp_settings) * 0.08
     
-    c_real_base = base_c_real + bmp_c_real_mod
-    c_imag_base = base_c_imag + bmp_c_imag_mod
+    c_real_base = base_c_real + bmp_c_real_mod + mid_freq * 0.15 * movement_scale_factor # AUMENTATO
+    c_imag_base = base_c_imag + bmp_c_imag_mod + high_freq * 0.12 * movement_scale_factor # AUMENTATO
     
-    # Zoom con BPM sync
+    # Zoom con BPM sync (maggiore influenza delle frequenze)
     base_zoom = 1.0
     bmp_zoom_mod = apply_bpm_movement_modulation(0, phase * 1.5, beat_intensity, 'sine', bmp_settings) * 0.3
-    zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + high_freq * 2.0 * movement_scale_factor
+    zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + high_freq * 3.0 * movement_scale_factor # AUMENTATO DA 2.0
     
-    # Audio modulation con BPM
-    base_audio_mod = (rms * 1.5 + (low_freq * 0.5 + mid_freq * 0.8 + high_freq * 0.2)) * movement_scale_factor
+    # Audio modulation con BPM (maggiore influenza delle frequenze)
+    base_audio_mod = (rms * 1.5 + (low_freq * 1.0 + mid_freq * 1.5 + high_freq * 0.5)) * movement_scale_factor # AUMENTATO LE INFLUENZE
     audio_mod = base_audio_mod * (1.0 + beat_intensity * 0.6)
     
     fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
@@ -447,16 +447,17 @@ def draw_burning_ship_fractal_bpm_sync(frame_img, width, height, rms, current_ti
     
     base_zoom = 1.0
     bmp_zoom_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 0.2
-    zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + mid_freq * 2.0 * movement_scale_factor
+    zoom = base_zoom + bmp_zoom_mod + rms * 1.5 * movement_scale_factor + mid_freq * 3.0 * movement_scale_factor # AUMENTATO DA 2.0
     
     base_move_x, base_move_y = -1.8, -0.08
     bmp_move_x = apply_bpm_movement_modulation(0, phase * 1.2, beat_intensity, 'sine', bmp_settings) * 0.05
     bmp_move_y = apply_bpm_movement_modulation(0, phase * 0.9, beat_intensity, 'cosine', bmp_settings) * 0.03
     
-    move_x = base_move_x + bmp_move_x
-    move_y = base_move_y + bmp_move_y
+    # Maggiore influenza delle frequenze sul movimento
+    move_x = base_move_x + bmp_move_x + low_freq * 0.1 * movement_scale_factor # AUMENTATO
+    move_y = base_move_y + bmp_move_y + mid_freq * 0.07 * movement_scale_factor # AUMENTATO
     
-    audio_influence = (rms * 1.0 + high_freq * 0.5) * movement_scale_factor * (1.0 + beat_intensity * 0.4)
+    audio_influence = (rms * 1.0 + high_freq * 0.8) * movement_scale_factor * (1.0 + beat_intensity * 0.4) # AUMENTATO
     
     fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
     
@@ -474,11 +475,11 @@ def draw_sierpinski_fractal_bpm_sync(frame_img, width, height, rms, current_time
     
     phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
     
-    base_iterations = 3 + int(rms * 3 * movement_scale_factor) + int(low_freq * 2 * movement_scale_factor)
+    base_iterations = 3 + int(rms * 3 * movement_scale_factor) + int(low_freq * 3 * movement_scale_factor) # AUMENTATO DA 2
     bmp_iter_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 2
     iterations = int(base_iterations + bmp_iter_mod)
     
-    base_audio_scale = (rms + (low_freq + mid_freq + high_freq) / 3.0) * movement_scale_factor
+    base_audio_scale = (rms * 1.5 + (low_freq * 2.0 + mid_freq * 1.0 + high_freq * 0.5)) * movement_scale_factor # AUMENTATO LE INFLUENZE
     audio_scale = base_audio_scale * (1.0 + beat_intensity * 0.5)
     
     base_carpet_color_bgr = hex_to_bgr(color_settings['background_color'])
