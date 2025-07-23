@@ -47,12 +47,13 @@ def analyze_frequency_bands(freq_data):
         return 0.0, 0.0, 0.0
 
     total_bins = len(freq_data_norm)
-    low_end = max(1, total_bins // 3)
-    mid_end = max(low_end + 1, (total_bins * 2) // 3)
-
-    low_freq = np.mean(freq_data_norm[:low_end])
-    mid_freq = np.mean(freq_data_norm[low_end:mid_end])
-    high_freq = np.mean(freq_data_norm[mid_end:])
+    # Aumentiamo la sensibilità per le bande
+    low_end = max(1, int(total_bins * 0.25)) # Fino a ~2.7kHz per 11025/2
+    mid_end = max(low_end + 1, int(total_bins * 0.6)) # Fino a ~6.6kHz
+    
+    low_freq = np.mean(freq_data_norm[:low_end]) if low_end > 0 else 0.0
+    mid_freq = np.mean(freq_data_norm[low_end:mid_end]) if mid_end > low_end else 0.0
+    high_freq = np.mean(freq_data_norm[mid_end:]) if total_bins > mid_end else 0.0
 
     return float(low_freq), float(mid_freq), float(high_freq)
 
@@ -153,399 +154,10 @@ def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_
     
     return float(base_value + modulation)
 
-# --- FUNZIONI FRATTALI AVANZATE ---
-
-@jit(nopython=True)
-def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence):
-    """Genera il set di Mandelbrot con influenza audio (Numba ottimizzato)"""
-    fractal = np.zeros((height, width, 3), dtype=np.uint8)
-
-    for y in range(height):
-        for x in range(width):
-            # Coordinate complesse con zoom e movimento
-            c_real = (x - width/2) / (zoom * width/4) + move_x
-            c_imag = (y - height/2) / (zoom * height/4) + move_y
-
-            # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI per una trasformazione più marcata
-            c_real += audio_influence * 0.5 * np.sin(x * 0.001) 
-            c_imag += audio_influence * 0.5 * np.cos(y * 0.001) 
-
-            z_real = 0.0
-            z_imag = 0.0
-            iteration = 0
-
-            # Calcolo iterativo
-            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
-                z_real_new = z_real*z_real - z_imag*z_imag + c_real
-                z_imag = 2.0*z_real*z_imag + c_imag
-                z_real = z_real_new
-                iteration += 1
-
-            # Colori basati sul numero di iterazioni
-            if iteration == max_iter:
-                fractal[y, x] = np.array([0, 0, 0], dtype=np.uint8)
-            else:
-                t = iteration / max_iter
-                r = int(9 * (1 - t) * t * t * t * 255)
-                g = int(15 * (1 - t) * (1 - t) * t * t * 255)
-                b = int(8.5 * (1 - t) * (1 - t) * (1 - t) * t * 255)
-                fractal[y, x] = np.array([b, g, r], dtype=np.uint8)
-
-    return fractal
-
-@jit(nopython=True)
-def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod):
-    """Genera il set di Julia con parametri dinamici (Numba ottimizzato)"""
-    fractal = np.zeros((height, width, 3), dtype=np.uint8)
-
-    # Modifica i parametri C in base all'audio
-    # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI
-    c_real = c_real_base + audio_mod * 0.3 
-    c_imag = c_imag_base + audio_mod * 0.35 
-
-    for y in range(height):
-        for x in range(width):
-            z_real = (x - width/2) / (zoom * width/4)
-            z_imag = (y - height/2) / (zoom * width/4)
-
-            iteration = 0
-            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
-                z_real_new = z_real*z_real - z_imag*z_imag + c_real
-                z_imag = 2.0*z_real*z_imag + c_imag
-                z_real = z_real_new
-                iteration += 1
-
-            # Colori più vivaci per Julia
-            if iteration == max_iter:
-                fractal[y, x] = np.array([20, 20, 40], dtype=np.uint8)
-            else:
-                t = iteration / max_iter
-                b = int(255 * (np.sin(t * 10 + 0) * 0.5 + 0.5))
-                g = int(255 * (np.sin(t * 10 + 2 * np.pi / 3) * 0.5 + 0.5))
-                r = int(255 * (np.sin(t * 10 + 4 * np.pi / 3) * 0.5 + 0.5))
-                fractal[y, x] = np.array([b, g, r], dtype=np.uint8)
-
-    return fractal
-
-# (La funzione burning_ship_numba e draw_burning_ship_fractal_bpm_sync
-# sono state mantenute nel codice ma non sono più selezionabili nell'UI)
-@jit(nopython=True)
-def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence):
-    """Genera il frattale Burning Ship (Numba ottimizzato)"""
-    fractal = np.zeros((height, width, 3), dtype=np.uint8)
-
-    for y in range(height):
-        for x in range(width):
-            c_real = (x - width/2) / (zoom * width/4) + move_x
-            c_imag = (y - height/2) / (zoom * height/4) + move_y
-
-            # Influenza audio
-            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
-            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
-
-            z_real = 0.0
-            z_imag = 0.0
-            iteration = 0
-
-            while iteration < max_iter and z_real*z_real + z_imag*z_imag < 4.0:
-                # La differenza chiave: valori assoluti
-                z_real_new = z_real*z_real - z_imag*z_imag + c_real
-                z_imag = 2.0 * abs(z_real) * abs(z_imag) + c_imag
-                z_real = z_real_new
-                iteration += 1
-
-            # Colori fiammeggianti dinamici
-            if iteration == max_iter:
-                fractal[y, x] = np.array([0, 0, 0], dtype=np.uint8)
-            else:
-                t = iteration / max_iter
-                b = int(255 * (np.sin(t * 5 + 0) * 0.5 + 0.5))
-                g = int(255 * (np.sin(t * 5 + 1.5) * 0.5 + 0.5))
-                r = int(255 * (np.sin(t * 5 + 3) * 0.5 + 0.5))
-                fractal[y, x] = np.array([b, g, r], dtype=np.uint8)
-
-    return fractal
-
-
-@jit(nopython=True)
-def _remove_squares_numba(arr, level, x, y, size, fill_color_b, fill_color_g, fill_color_r):
-    """Funzione ricorsiva per Sierpinski Carpet (Numba ottimizzato)"""
-    if level == 0 or size < 3:
-        return
-
-    third = size // 3
-
-    # Rimuovi il quadrato centrale
-    for i in range(third):
-        for j in range(third):
-            cx = x + third + i
-            cy = y + third + j
-            if cx < arr.shape[0] and cy < arr.shape[1]:
-                arr[cx, cy, 0] = fill_color_b
-                arr[cx, cy, 1] = fill_color_g
-                arr[cx, cy, 2] = fill_color_r
-
-    # Ricorsione sui quadrati rimanenti
-    for i in range(3):
-        for j in range(3):
-            if i != 1 or j != 1:  # Salta il quadrato centrale
-                _remove_squares_numba(arr, level-1, x + i*third, y + j*third, third, 
-                                     fill_color_b, fill_color_g, fill_color_r)
-
-def generate_sierpinski_carpet(width, height, iterations, audio_scale, base_color_bgr):
-    """Genera il tappeto di Sierpinski con influenza audio"""
-    size = min(width, height)
-    
-    # Inizia con un colore di base
-    carpet = np.full((size, size, 3), base_color_bgr, dtype=np.uint8)
-
-    # Numero di iterazioni basato sull'audio
-    # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI
-    iter_count = max(1, min(6, int(iterations + audio_scale * 8))) 
-
-    # Colore "vuoto" (nero) per i fori
-    _remove_squares_numba(carpet, iter_count, 0, 0, size, 0, 0, 0)
-
-    # Ridimensiona il tappeto per adattarlo al frame
-    fractal = cv2.resize(carpet, (width, height), interpolation=cv2.INTER_AREA)
-
-    return fractal
-
-def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings):
-    """Applica colori basati sulle frequenze al frattale esistente"""
-    if not color_settings['use_frequency_colors']:
-        return fractal
-
-    colored_fractal = fractal.copy()
-
-    low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
-    mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
-    high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
-
-    # Normalizza le influenze delle frequenze per il blending
-    low_intensity = np.clip(low_freq * 5.0, 0.0, 1.0)
-    mid_intensity = np.clip(mid_freq * 5.0, 0.0, 1.0)
-    high_intensity = np.clip(high_freq * 5.0, 0.0, 1.0)
-
-    # Crea un colore base mescolando i colori delle frequenze
-    mixed_frequency_color = (
-        low_bgr * low_intensity +
-        mid_bgr * mid_intensity +
-        high_bgr * high_intensity
-    )
-    
-    sum_intensity = low_intensity + mid_intensity + high_intensity
-    if sum_intensity > 1e-6:
-        mixed_frequency_color = np.clip(mixed_frequency_color / sum_intensity, 0, 255)
-    else:
-        mixed_frequency_color = np.array([0, 0, 0], dtype=np.float32)
-
-    # Applica il colore misto ai pixel del frattale che non sono neri
-    mask = np.any(colored_fractal != [0, 0, 0], axis=-1)
-
-    # Modula il colore del frattale con il colore misto delle frequenze
-    for c in range(3):
-        colored_fractal[mask, c] = np.clip(
-            colored_fractal[mask, c].astype(np.float32) * (mixed_frequency_color[c] / 255.0) * 1.5, 
-            0, 255
-        ).astype(np.uint8)
-
-    return colored_fractal
-
-# --- FUNZIONI DI DISEGNO FRATTALE PER IL PROCESSING (ORA CON BPM SYNC) ---
-
-def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
-    """Mandelbrot con sincronizzazione BPM avanzata"""
-    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
-    # Calcola fase e intensità BPM
-    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
-    
-    # Modifica: Applica movement_scale_factor all'RMS e alle frequenze
-    effective_rms = rms * movement_scale_factor
-    effective_low_freq = low_freq * movement_scale_factor
-    effective_mid_freq = mid_freq * movement_scale_factor
-    effective_high_freq = high_freq * movement_scale_factor
-
-    # Parametri dinamici con sincronizzazione BPM
-    # AUMENTATI I COEFFICIENTI QUI
-    base_max_iter = 80 + effective_rms * 350 
-    max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
-    max_iter = max(50, min(250, max_iter)) 
-    
-    # Zoom sincronizzato sui BPM (maggiore influenza delle frequenze)
-    base_zoom = 1.5
-    bmp_zoom_modulation = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.5
-    # AUMENTATI I COEFFICIENTI QUI
-    audio_zoom_influence = effective_rms * 12 + effective_low_freq * 40 
-    zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.9 
-    
-    # Movimento sincronizzato (maggiore influenza delle frequenze)
-    base_move_x = -0.75
-    base_move_y = 0.05
-    
-    bmp_move_x = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
-    bmp_move_y = apply_bpm_movement_modulation(0, phase * 1.3, beat_intensity, 'cosine', bmp_settings) * 0.08
-    
-    # AUMENTATI I COEFFICIENTI QUI
-    move_x = base_move_x + bmp_move_x + effective_mid_freq * 0.3 
-    move_y = base_move_y + bmp_move_y + effective_high_freq * 0.25 
-    
-    # Influenza audio modulata dai BPM
-    # AUMENTATI I COEFFICIENTI QUI
-    base_audio_influence = (effective_rms * 4.0 + (effective_low_freq + effective_mid_freq + effective_high_freq) / 1.5) 
-    audio_influence = base_audio_influence * (1.0 + beat_intensity * 0.5)
-    
-    fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
-    
-    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])): 
-        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
-    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
-    base_alpha = 0.65
-    beat_alpha_boost = 0
-    if bmp_settings['enabled']: 
-        beat_alpha_boost = bmp_settings['beat_response_intensity'] * 0.5 
-    alpha = min(0.95, base_alpha + beat_alpha_boost)
-    
-    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
-    return frame_img
-
-def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
-    """Julia Set con sincronizzazione BPM avanzata"""
-    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
-    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
-    
-    # Modifica: Applica movement_scale_factor all'RMS e alle frequenze
-    effective_rms = rms * movement_scale_factor
-    effective_low_freq = low_freq * movement_scale_factor
-    effective_mid_freq = mid_freq * movement_scale_factor
-    effective_high_freq = high_freq * movement_scale_factor
-
-    # Iterazioni con modulazione BPM
-    # AUMENTATI I COEFFICIENTI QUI
-    base_max_iter = 70 + effective_rms * 180 
-    max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
-    max_iter = max(50, min(200, max_iter)) 
-    
-    # Parametri C di Julia sincronizzati (maggiore influenza delle frequenze)
-    base_c_real = -0.7
-    base_c_imag = 0.27015
-    
-    bmp_c_real_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
-    bmp_c_imag_mod = apply_bpm_movement_modulation(0, phase * 0.8, beat_intensity, 'cosine', bmp_settings) * 0.08
-    
-    # AUMENTATI I COEFFICIENTI QUI
-    c_real_base = base_c_real + bmp_c_real_mod + effective_mid_freq * 0.4 
-    c_imag_base = base_c_imag + bmp_c_imag_mod + effective_high_freq * 0.35 
-    
-    # Zoom con BPM sync (maggiore influenza delle frequenze)
-    base_zoom = 1.0
-    bmp_zoom_mod = apply_bpm_movement_modulation(0, phase * 1.5, beat_intensity, 'sine', bmp_settings) * 0.3
-    # AUMENTATI I COEFFICIENTI QUI
-    zoom = base_zoom + bmp_zoom_mod + effective_rms * 3.5 + effective_high_freq * 7.0 
-    
-    # Audio modulation con BPM (maggiore influenza delle frequenze)
-    # AUMENTATI I COEFFICIENTI QUI
-    base_audio_mod = (effective_rms * 3.5 + (effective_low_freq * 3.0 + effective_mid_freq * 3.5 + effective_high_freq * 1.5)) 
-    audio_mod = base_audio_mod * (1.0 + beat_intensity * 0.6)
-    
-    fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
-    
-    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
-        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-
-    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
-    alpha = min(0.95, 0.75 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
-    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
-    return frame_img
-
-# La funzione draw_burning_ship_fractal_bpm_sync è stata mantenuta nel codice ma non è più selezionabile nell'UI
-def draw_burning_ship_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
-    """Burning Ship con sincronizzazione BPM"""
-    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
-    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
-    
-    # Modifica: Applica movement_scale_factor all'RMS e alle frequenze
-    effective_rms = rms * movement_scale_factor
-    effective_low_freq = low_freq * movement_scale_factor
-    effective_mid_freq = mid_freq * movement_scale_factor
-    effective_high_freq = high_freq * movement_scale_factor
-
-    # AUMENTATI I COEFFICIENTI QUI
-    base_max_iter = 60 + effective_rms * 150 
-    max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'sawtooth', bmp_settings))
-    max_iter = max(40, min(150, max_iter)) 
-    
-    base_zoom = 1.0
-    bmp_zoom_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 0.2
-    # AUMENTATI I COEFFICIENTI QUI
-    zoom = base_zoom + bmp_zoom_mod + effective_rms * 3.5 + effective_mid_freq * 6.0 
-    
-    base_move_x, base_move_y = -1.8, -0.08
-    bmp_move_x = apply_bpm_movement_modulation(0, phase * 1.2, beat_intensity, 'sine', bmp_settings) * 0.05
-    bmp_move_y = apply_bpm_movement_modulation(0, phase * 0.9, beat_intensity, 'cosine', bmp_settings) * 0.03
-    
-    # Maggiore influenza delle frequenze sul movimento
-    # AUMENTATI I COEFFICIENTI QUI
-    move_x = base_move_x + bmp_move_x + effective_low_freq * 0.3 
-    move_y = base_move_y + bmp_move_y + effective_mid_freq * 0.25 
-    
-    # AUMENTATI I COEFFICIENTI QUI
-    audio_influence = (effective_rms * 2.5 + effective_high_freq * 2.0) * (1.0 + (beat_intensity * 0.4 if bmp_settings['enabled'] else 0)) 
-    
-    fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
-    
-    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
-        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-    
-    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
-    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.35 if bmp_settings['enabled'] else 0)) 
-    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
-    return frame_img
-
-def draw_sierpinski_fractal_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
-    """Sierpinski Carpet con sincronizzazione BPM"""
-    low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
-    
-    phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
-    
-    # Modifica: Applica movement_scale_factor all'RMS e alle frequenze
-    effective_rms = rms * movement_scale_factor
-    effective_low_freq = low_freq * movement_scale_factor
-    effective_mid_freq = mid_freq * movement_scale_factor
-    effective_high_freq = high_freq * movement_scale_factor
-
-    # AUMENTATI I COEFFICIENTI QUI
-    base_iterations = 3 + int(effective_rms * 8) + int(effective_low_freq * 8) 
-    bmp_iter_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 2
-    iterations = int(base_iterations + bmp_iter_mod)
-    
-    # AUMENTATI I COEFFICIENTI QUI
-    base_audio_scale = (effective_rms * 4.0 + (effective_low_freq * 5.0 + effective_mid_freq * 2.5 + effective_high_freq * 1.5)) 
-    audio_scale = base_audio_scale * (1.0 + (beat_intensity * 0.5 if bmp_settings['enabled'] else 0))
-    
-    base_carpet_color_bgr = hex_to_bgr(color_settings['background_color'])
-    fractal = generate_sierpinski_carpet(width, height, iterations, audio_scale, base_carpet_color_bgr)
-    
-    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
-        fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-    
-    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
-    alpha = min(0.85, 0.6 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
-    cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
-    
-    return frame_img
-
-# --- NUOVA FUNZIONE PER PATTERN GEOMETRICO (ora più dinamica) ---
+# --- NUOVA FUNZIONE PER PATTERN GEOMETRICO (ora più dinamica e senza "zoom") ---
 def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time, beat_times, tempo, freq_data, color_settings, movement_scale_factor, bmp_settings):
     """
-    Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni.
+    Genera un pattern geometrico reattivo all'audio e ai BPM con trasformazioni significative.
     """
     low_freq, mid_freq, high_freq = analyze_frequency_bands(freq_data)
     phase, is_on_beat, beat_intensity = calculate_bpm_phase(current_time, tempo, bmp_settings['movement_sync_type'], beat_times, bmp_settings)
@@ -555,59 +167,70 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    # Determinare il "modo" del pattern basato su beat_intensity e tempo
-    # Aumentiamo la sensibilità per un cambio più frequente
-    pattern_mode = 0
-    if is_on_beat and beat_intensity > 0.6: # Beat forte
-        pattern_mode = (int(current_time * 2) % 3) + 1 # Passa a modalità 1, 2 o 3 al beat
-    elif effective_low_freq > 0.15: # Basse frequenze dominanti
+    # Determinare il "modo" del pattern basato su beat_intensity e frequenze
+    # La logica è stata affinata per transizioni più evidenti.
+    pattern_mode = 0 # Default mode
+    
+    # Forte impatto sul beat per un cambiamento visivo netto
+    if is_on_beat and beat_intensity > 0.8 and bmp_settings['enabled']:
+        # Randomizza la modalità o cicla in modo più veloce
+        pattern_mode = int((current_time * 5 + random.random() * 2) % 4) # Veloce cambio di pattern al beat
+    elif effective_low_freq > 0.2:
         pattern_mode = 1
-    elif effective_mid_freq > 0.15: # Medie frequenze dominanti
+    elif effective_mid_freq > 0.2:
         pattern_mode = 2
-    elif effective_high_freq > 0.15: # Alte frequenze dominanti
+    elif effective_high_freq > 0.2:
         pattern_mode = 3
-    else: # Nessuna frequenza dominante / tra i beat
-        pattern_mode = 0
+    else:
+        # Se nessuna condizione è soddisfatta, torna al pattern base o un pattern transitorio
+        pattern_mode = int((current_time * 0.5) % 4) # Variazione lenta quando non ci sono picchi
 
-    # Dimensioni delle celle e spessore del bordo
-    cell_size_base = 60
-    border_thickness_base = 2
-
-    # Modulazione della dimensione della cella con RMS e BPM (più pronunciata)
-    cell_size_mod_audio = effective_rms * 50 + effective_low_freq * 80 
-    cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 30
+    # Dimensioni delle celle - meno "zoom", più focalizzato sul pattern
+    cell_size_base = 70 
+    # Variazione sottile basata sull'RMS, non come uno zoom
+    cell_size_mod_audio = effective_rms * 15 
+    
+    # Modulazione BPM sulla dimensione per un "pop" non zoom-like
+    cell_size_mod_bpm = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 15 if bmp_settings['enabled'] else 0
+    
     current_cell_size = int(cell_size_base + cell_size_mod_audio + cell_size_mod_bpm)
-    current_cell_size = max(10, min(180, current_cell_size)) # Limiti più ampi per un maggiore dinamismo
+    current_cell_size = max(20, min(120, current_cell_size)) # Limiti per evitare dimensioni estreme
 
-    # Modulazione dello spessore del bordo
-    border_thickness_mod = effective_rms * 5 + beat_intensity * bmp_settings['beat_response_intensity'] * 5
+    # Spessore del bordo - reattivo ma non dominante
+    border_thickness_base = 1
+    border_thickness_mod = effective_rms * 2 + (beat_intensity * bmp_settings['beat_response_intensity'] * 3 if bmp_settings['enabled'] else 0)
     current_border_thickness = int(border_thickness_base + border_thickness_mod)
-    current_border_thickness = max(1, min(15, current_border_thickness))
+    current_border_thickness = max(1, min(8, current_border_thickness))
 
 
-    # Colori reattivi alle frequenze
+    # Colori reattivi alle frequenze (più vivaci e contrastanti)
     base_fill_color = np.array(hex_to_bgr(color_settings['background_color']), dtype=np.float32)
     
     low_bgr = np.array(hex_to_bgr(color_settings['low_freq_color']), dtype=np.float32)
     mid_bgr = np.array(hex_to_bgr(color_settings['mid_freq_color']), dtype=np.float32)
     high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
-    # Calcola il colore in base alle frequenze con maggiore influenza
+    # Blend dei colori con maggiore intensità
     mixed_color = (
-        low_bgr * effective_low_freq * 4.0 +
-        mid_bgr * effective_mid_freq * 4.0 +
-        high_bgr * effective_high_freq * 4.0
+        low_bgr * effective_low_freq * 5.0 +
+        mid_bgr * effective_mid_freq * 5.0 +
+        high_bgr * effective_high_freq * 5.0
     )
-    mixed_color = np.clip(mixed_color + base_fill_color * 0.5, 0, 255).astype(np.uint8) # Blend con sfondo
+    # Aggiungi un po' di colore di sfondo per evitare che sia troppo "fluido"
+    mixed_color = np.clip(mixed_color + base_fill_color * 0.2, 0, 255).astype(np.uint8) 
     fill_color = tuple(mixed_color.tolist())
     
-    # Colore del bordo (può essere lo stesso o diverso)
-    border_color = tuple(np.clip(255 - mixed_color, 0, 255).tolist()) # Complementare o fisso
+    # Colore del bordo (invertito o contrastante per visibilità)
+    border_color = tuple(np.clip(255 - mixed_color * 0.8, 0, 255).tolist()) 
 
-    # Effetto "glitch" o "flash" sul beat
+    # Effetto "flash" sul beat - ora più controllato e meno invasivo
     if is_on_beat and beat_intensity > 0.7 and bmp_settings['enabled']:
-        flash_color = tuple(np.array([255,255,255]) - np.array(fill_color) / 2) # Colore leggermente contrastante
-        cv2.rectangle(frame_img, (0,0), (width, height), flash_color, -1) # Flash l'intero schermo
+        # Crea un flash temporaneo con un colore complementare o brillante
+        flash_effect_color = tuple(np.clip(np.array([255,255,255]) - np.array(fill_color), 0, 255).tolist())
+        # Disegna un rettangolo semi-trasparente sopra il frame esistente
+        overlay = np.full_like(frame_img, flash_effect_color, dtype=np.uint8)
+        alpha_flash = min(0.5, beat_intensity * 0.7) # Intensità del flash
+        cv2.addWeighted(frame_img, 1.0, overlay, alpha_flash, 0, frame_img)
         
     # Disegna le forme in base al "pattern_mode"
     for y in range(0, height, current_cell_size):
@@ -618,61 +241,78 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
             # Centro della cella
             cx, cy = x1 + current_cell_size // 2, y1 + current_cell_size // 2
             
-            # Offset per movimento subtile
-            offset_x = int(np.sin(current_time * 5 + x * 0.01) * effective_rms * 20)
-            offset_y = int(np.cos(current_time * 5 + y * 0.01) * effective_rms * 20)
+            # Offset per movimento sottile (meno dominante)
+            offset_x = int(np.sin(current_time * 3 + x * 0.005) * effective_rms * 10)
+            offset_y = int(np.cos(current_time * 3 + y * 0.005) * effective_rms * 10)
 
-            draw_shape = True
-            
-            if pattern_mode == 0: # Griglia di quadrati e cerchi con dimensione dinamica
-                if (x // current_cell_size + y // current_cell_size) % 2 == 0:
-                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), fill_color, -1)
-                    if current_border_thickness > 0:
-                        cv2.rectangle(frame_img, (x1, y1), (x2, y2), border_color, current_border_thickness)
-                else:
+            # --- Differenti modalità di pattern per le trasformazioni ---
+            if pattern_mode == 0: # Griglia di quadrati che pulsano e ruotano
+                # Rotazione in base al beat_intensity o frequenze
+                angle = (effective_rms * 50 + beat_intensity * 90) % 360
+                
+                M = cv2.getRotationMatrix2D((cx, cy), angle, 1)
+                rotated_rect_points = np.array([
+                    [x1, y1], [x2, y1], [x2, y2], [x1, y2]
+                ], dtype=np.float32).reshape(-1, 1, 2)
+                
+                rotated_rect_points = cv2.transform(rotated_rect_points, M).astype(np.int32)
+                cv2.fillConvexPoly(frame_img, rotated_rect_points, fill_color)
+                if current_border_thickness > 0:
+                    cv2.polylines(frame_img, [rotated_rect_points], True, border_color, current_border_thickness)
+
+            elif pattern_mode == 1: # Cerchi che si trasformano in triangoli (o viceversa)
+                # Misura di "trasformazione" basata sulle basse frequenze
+                transform_factor = np.clip(effective_low_freq * 4.0, 0.0, 1.0) # 0=cerchio, 1=triangolo
+                
+                if transform_factor < 0.5: # Disegna cerchio
                     cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, fill_color, -1)
                     if current_border_thickness > 0:
                         cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness, border_color, current_border_thickness)
-
-            elif pattern_mode == 1: # Triangoli che si alternano con il beat
-                if is_on_beat and beat_intensity > 0.5:
+                else: # Disegna triangolo
                     pts = np.array([
                         [x1 + current_cell_size // 2, y1], 
                         [x1, y2], 
                         [x2, y2]
                     ], np.int32)
                     cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], fill_color)
-                else: # Quando non c'è beat, disegna quadrati
-                    cv2.rectangle(frame_img, (x1, y1), (x2, y2), fill_color, -1)
-
-            elif pattern_mode == 2: # Cerchi che si espandono/contraggono e si trasformano in quadrati sul beat
-                if is_on_beat and beat_intensity > 0.6:
-                    # Diventa un quadrato che "pulsa"
-                    pulse_size = int(current_cell_size * (1 + beat_intensity * 0.5))
-                    px1, py1 = cx - pulse_size // 2, cy - pulse_size // 2
-                    px2, py2 = cx + pulse_size // 2, cy + pulse_size // 2
-                    cv2.rectangle(frame_img, (px1, py1), (px2, py2), fill_color, -1)
-                else:
-                    # Cerchi con raggio variabile
-                    radius_mod = int(np.sin(current_time * 8 + x * 0.05 + y * 0.05) * (effective_rms * 10))
-                    cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness + radius_mod, fill_color, -1)
                     if current_border_thickness > 0:
-                        cv2.circle(frame_img, (cx, cy), current_cell_size // 2 - current_border_thickness + radius_mod, border_color, current_border_thickness)
-            
-            elif pattern_mode == 3: # Pattern più complesso con linee e forme che si spostano
-                # Linee diagonali alternate
-                if (x // current_cell_size) % 2 == 0:
-                    cv2.line(frame_img, (x1 + offset_x, y1 + offset_y), (x2 + offset_x, y2 + offset_y), fill_color, current_border_thickness)
-                else:
-                    cv2.line(frame_img, (x1 + offset_x, y2 + offset_y), (x2 + offset_x, y1 + offset_y), fill_color, current_border_thickness)
+                        cv2.polylines(frame_img, [pts.reshape((-1, 1, 2))], True, border_color, current_border_thickness)
+
+            elif pattern_mode == 2: # Pattern a scacchiera che cambia colore e si "dissolve"
+                # Dissoluzione/riapparizione basata sulle medie frequenze
+                dissolve_factor = np.clip(effective_mid_freq * 3.0, 0.0, 1.0)
                 
-                # Piccoli cerchi al centro delle celle sul beat
-                if is_on_beat and beat_intensity > 0.5:
-                    cv2.circle(frame_img, (cx, cy), int(current_cell_size * 0.2 * beat_intensity), fill_color, -1)
+                if (x // current_cell_size + y // current_cell_size) % 2 == 0:
+                    current_fill = (fill_color[0] * dissolve_factor, fill_color[1] * dissolve_factor, fill_color[2] * dissolve_factor)
+                else:
+                    current_fill = (border_color[0] * dissolve_factor, border_color[1] * dissolve_factor, border_color[2] * dissolve_factor)
+                
+                cv2.rectangle(frame_img, (x1, y1), (x2, y2), current_fill, -1)
+                
+                # Aggiungi piccoli cerchi o rettangoli casuali per l'effetto "glitch"
+                if random.random() < dissolve_factor * 0.2:
+                    rand_x = random.randint(x1, x2 - 5)
+                    rand_y = random.randint(y1, y2 - 5)
+                    rand_size = random.randint(5, 15)
+                    cv2.rectangle(frame_img, (rand_x, rand_y), (rand_x + rand_size, rand_y + rand_size), fill_color, -1)
 
 
-    # Alpha blending per questo layer (reattivo come i frattali)
-    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.35 if bmp_settings['enabled'] else 0)) 
+            elif pattern_mode == 3: # Linee orizzontali/verticali che si ispessiscono e si spostano
+                # Spostamento e spessore basati sulle alte frequenze
+                line_thickness_mod = int(effective_high_freq * 10)
+                line_offset = int(np.sin(current_time * 6 + x * 0.01 + y * 0.01) * effective_high_freq * 30)
+                
+                if (x // current_cell_size) % 2 == 0: # Linee verticali
+                    cv2.line(frame_img, (cx + line_offset, y1), (cx + line_offset, y2), fill_color, current_border_thickness + line_thickness_mod)
+                else: # Linee orizzontali
+                    cv2.line(frame_img, (x1, cy + line_offset), (x2, cy + line_offset), fill_color, current_border_thickness + line_thickness_mod)
+                
+                # Aggiungi un piccolo punto al centro con un colore complementare
+                cv2.circle(frame_img, (cx, cy), int(2 + effective_high_freq * 5), border_color, -1)
+
+
+    # Alpha blending per questo layer
+    alpha = min(0.95, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) 
     geometric_pattern_layer = frame_img.copy() # Copia il frame con il pattern
     cv2.addWeighted(frame_img, 1-alpha, geometric_pattern_layer, alpha, 0, frame_img)
 
@@ -725,10 +365,10 @@ selected_format = st.sidebar.selectbox(
 width, height = VIDEO_FORMATS[selected_format]
 
 # Fractal type selection
-st.sidebar.header("🌀 Tipo Frattale")
+st.sidebar.header("🌀 Tipo Visualizzazione") # Changed label
 fractal_type = st.sidebar.selectbox(
-    "Scegli frattale:",
-    ["Mandelbrot", "Julia", "Sierpinski", "Pattern Geometrico"] # Added "Pattern Geometrico"
+    "Scegli visualizzazione:", # Changed label
+    ["Pattern Geometrico"] # ONLY Geometric Pattern now
 )
 
 # Movement settings
@@ -825,33 +465,11 @@ if uploaded_file is not None:
                     # Create base frame
                     frame_img = np.full((height, width, 3), hex_to_bgr(color_settings['background_color']), dtype=np.uint8)
                     
-                    # Apply fractal based on selection
-                    if fractal_type == "Mandelbrot":
-                        frame_img = draw_mandelbrot_fractal_bpm_sync(
-                            frame_img, width, height, rms, current_time, beat_times, 
-                            tempo, freq_data, color_settings, movement_scale, bmp_settings
-                        )
-                    elif fractal_type == "Julia":
-                        frame_img = draw_julia_fractal_bpm_sync(
-                            frame_img, width, height, rms, current_time, beat_times, 
-                            tempo, freq_data, color_settings, movement_scale, bmp_settings
-                        )
-                    # The Burning Ship case is now removed from UI, but function is still there if needed
-                    # elif fractal_type == "Burning Ship":
-                    #     frame_img = draw_burning_ship_fractal_bpm_sync(
-                    #         frame_img, width, height, rms, current_time, beat_times, 
-                    #         tempo, freq_data, color_settings, movement_scale, bmp_settings
-                    #     )
-                    elif fractal_type == "Sierpinski":
-                        frame_img = draw_sierpinski_fractal_bpm_sync(
-                            frame_img, width, height, rms, current_time, beat_times, 
-                            tempo, freq_data, color_settings, movement_scale, bmp_settings
-                        )
-                    elif fractal_type == "Pattern Geometrico": # New geometric pattern
-                        frame_img = draw_geometric_pattern_bpm_sync(
-                            frame_img, width, height, rms, current_time, beat_times, 
-                            tempo, freq_data, color_settings, movement_scale, bmp_settings
-                        )
+                    # Apply geometric pattern
+                    frame_img = draw_geometric_pattern_bpm_sync(
+                        frame_img, width, height, rms, current_time, beat_times, 
+                        tempo, freq_data, color_settings, movement_scale, bmp_settings
+                    )
                     
                     # Write frame
                     out.write(frame_img)
@@ -884,7 +502,7 @@ if uploaded_file is not None:
                     st.download_button(
                         label="📥 Scarica Video",
                         data=video_data,
-                        file_name=f"synesthetic_{fractal_type.lower().replace(' ', '_')}_{int(time.time())}.mp4", # Fixed filename for geometric pattern
+                        file_name=f"synesthetic_{fractal_type.lower().replace(' ', '_')}_{int(time.time())}.mp4", 
                         mime="video/mp4"
                     )
                     
@@ -917,8 +535,5 @@ st.markdown("""
 - **Transizioni smooth** per effetti fluidi
 
 ### 🌀 Visualizzazioni disponibili:
-- **Mandelbrot**: Il classico set frattale
-- **Julia**: Variazioni dinamiche e colorate  
-- **Sierpinski**: Pattern geometrici ricorsivi
 - **Pattern Geometrico**: Nuove visualizzazioni basate su forme geometriche reattive!
 """)
