@@ -166,10 +166,9 @@ def mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_in
             c_real = (x - width/2) / (zoom * width/4) + move_x
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
-            # Modifica: Moltiplica l'audio_influence per un controllo più preciso
-            # Se audio_influence è 0, questo termine sarà 0
-            c_real += audio_influence * 0.05 * np.sin(x * 0.001) 
-            c_imag += audio_influence * 0.05 * np.cos(y * 0.001) 
+            # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI per una trasformazione più marcata
+            c_real += audio_influence * 0.5 * np.sin(x * 0.001) # AUMENTATO DA 0.2
+            c_imag += audio_influence * 0.5 * np.cos(y * 0.001) # AUMENTATO DA 0.2
 
             z_real = 0.0
             z_imag = 0.0
@@ -199,10 +198,10 @@ def julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, aud
     """Genera il set di Julia con parametri dinamici (Numba ottimizzato)"""
     fractal = np.zeros((height, width, 3), dtype=np.uint8)
 
-    # Modifica: C_real e C_imag sono già modulati da audio_mod.
-    # Se audio_mod è 0, non avranno influenza.
-    c_real = c_real_base + audio_mod * 0.05
-    c_imag = c_imag_base + audio_mod * 0.07
+    # Modifica i parametri C in base all'audio
+    # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI
+    c_real = c_real_base + audio_mod * 0.3 # AUMENTATO DA 0.15
+    c_imag = c_imag_base + audio_mod * 0.35 # AUMENTATO DA 0.2
 
     for y in range(height):
         for x in range(width):
@@ -238,10 +237,9 @@ def burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_infl
             c_real = (x - width/2) / (zoom * width/4) + move_x
             c_imag = (y - height/2) / (zoom * height/4) + move_y
 
-            # Modifica: Moltiplica l'audio_influence per un controllo più preciso
-            # Se audio_influence è 0, questo termine sarà 0
-            c_real += audio_influence * 0.003 * np.sin(x * 0.002 + y * 0.001)
-            c_imag += audio_influence * 0.003 * np.cos(x * 0.001 + y * 0.002)
+            # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI
+            c_real += audio_influence * 0.08 * np.sin(x * 0.002 + y * 0.001) # AUMENTATO DA 0.015
+            c_imag += audio_influence * 0.08 * np.cos(x * 0.001 + y * 0.002) # AUMENTATO DA 0.015
 
             z_real = 0.0
             z_imag = 0.0
@@ -299,8 +297,8 @@ def generate_sierpinski_carpet(width, height, iterations, audio_scale, base_colo
     carpet = np.full((size, size, 3), base_color_bgr, dtype=np.uint8)
 
     # Numero di iterazioni basato sull'audio
-    # Modifica: Se audio_scale è 0, l'iter_count sarà solo base_iterations
-    iter_count = max(1, min(6, int(iterations + audio_scale * 2)))
+    # AUMENTATO DRASICAMENTE L'INFLUENZA AUDIO QUI
+    iter_count = max(1, min(6, int(iterations + audio_scale * 8))) # AUMENTATO DA 4
 
     # Colore "vuoto" (nero) per i fori
     _remove_squares_numba(carpet, iter_count, 0, 0, size, 0, 0, 0)
@@ -322,8 +320,6 @@ def apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, co
     high_bgr = np.array(hex_to_bgr(color_settings['high_freq_color']), dtype=np.float32)
 
     # Normalizza le influenze delle frequenze per il blending
-    # Questi valori sono sempre usati se frequency_colors è attivo, indipendentemente da movement_scale_factor
-    # Se vuoi che anche i colori basati sulle frequenze si azzerino, devi moltiplicare anche questi per movement_scale_factor
     low_intensity = np.clip(low_freq * 5.0, 0.0, 1.0)
     mid_intensity = np.clip(mid_freq * 5.0, 0.0, 1.0)
     high_intensity = np.clip(high_freq * 5.0, 0.0, 1.0)
@@ -369,15 +365,17 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     effective_high_freq = high_freq * movement_scale_factor
 
     # Parametri dinamici con sincronizzazione BPM
-    base_max_iter = 80 + effective_rms * 150 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_max_iter = 80 + effective_rms * 350 # AUMENTATO DA 250
     max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
-    max_iter = max(50, min(200, max_iter))
+    max_iter = max(50, min(250, max_iter)) # AUMENTATO IL LIMITE SUPERIORE
     
     # Zoom sincronizzato sui BPM (maggiore influenza delle frequenze)
     base_zoom = 1.5
     bmp_zoom_modulation = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.5
-    audio_zoom_influence = effective_rms * 5 + effective_low_freq * 20 
-    zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.5 
+    # AUMENTATI I COEFFICIENTI QUI
+    audio_zoom_influence = effective_rms * 12 + effective_low_freq * 40 # AUMENTATO DA 8 e 30
+    zoom = base_zoom + bmp_zoom_modulation + audio_zoom_influence * 0.9 # AUMENTATO DA 0.7
     
     # Movimento sincronizzato (maggiore influenza delle frequenze)
     base_move_x = -0.75
@@ -386,34 +384,25 @@ def draw_mandelbrot_fractal_bpm_sync(frame_img, width, height, rms, current_time
     bmp_move_x = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
     bmp_move_y = apply_bpm_movement_modulation(0, phase * 1.3, beat_intensity, 'cosine', bmp_settings) * 0.08
     
-    move_x = base_move_x + bmp_move_x + effective_mid_freq * 0.1 
-    move_y = base_move_y + bmp_move_y + effective_high_freq * 0.08 
+    # AUMENTATI I COEFFICIENTI QUI
+    move_x = base_move_x + bmp_move_x + effective_mid_freq * 0.3 # AUMENTATO DA 0.2
+    move_y = base_move_y + bmp_move_y + effective_high_freq * 0.25 # AUMENTATO DA 0.15
     
     # Influenza audio modulata dai BPM
-    base_audio_influence = (effective_rms * 2.0 + (effective_low_freq + effective_mid_freq + effective_high_freq) / 3.0) 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_audio_influence = (effective_rms * 4.0 + (effective_low_freq + effective_mid_freq + effective_high_freq) / 1.5) # AUMENTATO
     audio_influence = base_audio_influence * (1.0 + beat_intensity * 0.5)
     
     fractal = mandelbrot_set_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
     
-    # Anche qui, se vogliamo che i colori siano statici, dobbiamo passargli low_freq=0, mid_freq=0, high_freq=0
-    # se movement_scale_factor è 0. Oppure, un'altra opzione è legare 'use_frequency_colors' a movement_scale_factor.
-    # Per ora, li lascio così, in modo che i colori reagiscano anche con movimento 0, se l'opzione è attiva.
-    # Se vuoi che i colori non reagiscano con movimento=0, modifica:
-    if color_settings['use_frequency_colors'] and movement_scale_factor > 0: # Aggiunta condizione
+    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])): 
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
-    elif color_settings['use_frequency_colors']: # Se movimento è 0 ma vuoi comunque colori base frequency (senza movimento audio)
-        # Passa valori 0 per disattivare il movimento dei colori, ma mantieni la logica base del colore
-        # In alternativa, potresti voler disabilitare completamente apply_frequency_colors_to_fractal
-        # o usare solo un colore fisso quando movement_scale_factor è 0.
-        pass # Per il momento, il comportamento è che se movement_scale_factor è 0, i colori delle frequenze comunque provano a reagire.
-             # Se vuoi che anche i colori siano statici, devi passare 0,0,0 alle frequenze
-             # fractal = apply_frequency_colors_to_fractal(fractal, 0, 0, 0, color_settings)
 
-    # Alpha blending reattivo ai BPM
+    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
     base_alpha = 0.65
     beat_alpha_boost = 0
-    if bmp_settings['enabled']: # Applica boost alpha solo se BPM sync è abilitato
-        beat_alpha_boost = bmp_settings['beat_response_intensity'] * 0.25 if is_on_beat else 0
+    if bmp_settings['enabled']: 
+        beat_alpha_boost = bmp_settings['beat_response_intensity'] * 0.5 # AUMENTATO DA 0.4
     alpha = min(0.95, base_alpha + beat_alpha_boost)
     
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
@@ -433,9 +422,10 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     effective_high_freq = high_freq * movement_scale_factor
 
     # Iterazioni con modulazione BPM
-    base_max_iter = 70 + effective_rms * 80 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_max_iter = 70 + effective_rms * 180 # AUMENTATO DA 120
     max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'pulse', bmp_settings))
-    max_iter = max(50, min(150, max_iter))
+    max_iter = max(50, min(200, max_iter)) # AUMENTATO LIMITE SUPERIORE
     
     # Parametri C di Julia sincronizzati (maggiore influenza delle frequenze)
     base_c_real = -0.7
@@ -444,24 +434,28 @@ def draw_julia_fractal_bpm_sync(frame_img, width, height, rms, current_time, bea
     bmp_c_real_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'sine', bmp_settings) * 0.1
     bmp_c_imag_mod = apply_bpm_movement_modulation(0, phase * 0.8, beat_intensity, 'cosine', bmp_settings) * 0.08
     
-    c_real_base = base_c_real + bmp_c_real_mod + effective_mid_freq * 0.15 
-    c_imag_base = base_c_imag + bmp_c_imag_mod + effective_high_freq * 0.12 
+    # AUMENTATI I COEFFICIENTI QUI
+    c_real_base = base_c_real + bmp_c_real_mod + effective_mid_freq * 0.4 # AUMENTATO DA 0.3
+    c_imag_base = base_c_imag + bmp_c_imag_mod + effective_high_freq * 0.35 # AUMENTATO DA 0.25
     
     # Zoom con BPM sync (maggiore influenza delle frequenze)
     base_zoom = 1.0
     bmp_zoom_mod = apply_bpm_movement_modulation(0, phase * 1.5, beat_intensity, 'sine', bmp_settings) * 0.3
-    zoom = base_zoom + bmp_zoom_mod + effective_rms * 1.5 + effective_high_freq * 3.0 
+    # AUMENTATI I COEFFICIENTI QUI
+    zoom = base_zoom + bmp_zoom_mod + effective_rms * 3.5 + effective_high_freq * 7.0 # AUMENTATO
     
     # Audio modulation con BPM (maggiore influenza delle frequenze)
-    base_audio_mod = (effective_rms * 1.5 + (effective_low_freq * 1.0 + effective_mid_freq * 1.5 + effective_high_freq * 0.5)) 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_audio_mod = (effective_rms * 3.5 + (effective_low_freq * 3.0 + effective_mid_freq * 3.5 + effective_high_freq * 1.5)) # AUMENTATO
     audio_mod = base_audio_mod * (1.0 + beat_intensity * 0.6)
     
     fractal = julia_set_numba(width, height, max_iter, c_real_base, c_imag_base, zoom, audio_mod)
     
-    if color_settings['use_frequency_colors'] and movement_scale_factor > 0:
+    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
 
-    alpha = min(0.95, 0.75 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0))
+    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
+    alpha = min(0.95, 0.75 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) # AUMENTATO DA 0.3
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
     
     return frame_img
@@ -478,30 +472,35 @@ def draw_burning_ship_fractal_bpm_sync(frame_img, width, height, rms, current_ti
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    base_max_iter = 60 + effective_rms * 60 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_max_iter = 60 + effective_rms * 150 # AUMENTATO DA 100
     max_iter = int(apply_bpm_movement_modulation(base_max_iter, phase, beat_intensity, 'sawtooth', bmp_settings))
-    max_iter = max(40, min(120, max_iter))
+    max_iter = max(40, min(150, max_iter)) # AUMENTATO LIMITE SUPERIORE
     
     base_zoom = 1.0
     bmp_zoom_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 0.2
-    zoom = base_zoom + bmp_zoom_mod + effective_rms * 1.5 + effective_mid_freq * 3.0 
+    # AUMENTATI I COEFFICIENTI QUI
+    zoom = base_zoom + bmp_zoom_mod + effective_rms * 3.5 + effective_mid_freq * 6.0 # AUMENTATO
     
     base_move_x, base_move_y = -1.8, -0.08
     bmp_move_x = apply_bpm_movement_modulation(0, phase * 1.2, beat_intensity, 'sine', bmp_settings) * 0.05
     bmp_move_y = apply_bpm_movement_modulation(0, phase * 0.9, beat_intensity, 'cosine', bmp_settings) * 0.03
     
     # Maggiore influenza delle frequenze sul movimento
-    move_x = base_move_x + bmp_move_x + effective_low_freq * 0.1 
-    move_y = base_move_y + bmp_move_y + effective_mid_freq * 0.07 
+    # AUMENTATI I COEFFICIENTI QUI
+    move_x = base_move_x + bmp_move_x + effective_low_freq * 0.3 # AUMENTATO DA 0.2
+    move_y = base_move_y + bmp_move_y + effective_mid_freq * 0.25 # AUMENTATO DA 0.15
     
-    audio_influence = (effective_rms * 1.0 + effective_high_freq * 0.8) * (1.0 + (beat_intensity * 0.4 if bmp_settings['enabled'] else 0)) 
+    # AUMENTATI I COEFFICIENTI QUI
+    audio_influence = (effective_rms * 2.5 + effective_high_freq * 2.0) * (1.0 + (beat_intensity * 0.4 if bmp_settings['enabled'] else 0)) # AUMENTATO
     
     fractal = burning_ship_numba(width, height, max_iter, zoom, move_x, move_y, audio_influence)
     
-    if color_settings['use_frequency_colors'] and movement_scale_factor > 0:
+    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
     
-    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.15 if bmp_settings['enabled'] else 0))
+    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
+    alpha = min(0.9, 0.7 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.35 if bmp_settings['enabled'] else 0)) # AUMENTATO DA 0.25
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
     
     return frame_img
@@ -518,20 +517,23 @@ def draw_sierpinski_fractal_bpm_sync(frame_img, width, height, rms, current_time
     effective_mid_freq = mid_freq * movement_scale_factor
     effective_high_freq = high_freq * movement_scale_factor
 
-    base_iterations = 3 + int(effective_rms * 3) + int(effective_low_freq * 3) 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_iterations = 3 + int(effective_rms * 8) + int(effective_low_freq * 8) # AUMENTATO DA 5 e 5
     bmp_iter_mod = apply_bpm_movement_modulation(0, phase, beat_intensity, 'pulse', bmp_settings) * 2
     iterations = int(base_iterations + bmp_iter_mod)
     
-    base_audio_scale = (effective_rms * 1.5 + (effective_low_freq * 2.0 + effective_mid_freq * 1.0 + effective_high_freq * 0.5)) 
+    # AUMENTATI I COEFFICIENTI QUI
+    base_audio_scale = (effective_rms * 4.0 + (effective_low_freq * 5.0 + effective_mid_freq * 2.5 + effective_high_freq * 1.5)) # AUMENTATO
     audio_scale = base_audio_scale * (1.0 + (beat_intensity * 0.5 if bmp_settings['enabled'] else 0))
     
     base_carpet_color_bgr = hex_to_bgr(color_settings['background_color'])
     fractal = generate_sierpinski_carpet(width, height, iterations, audio_scale, base_carpet_color_bgr)
     
-    if color_settings['use_frequency_colors'] and movement_scale_factor > 0:
+    if color_settings['use_frequency_colors'] and (movement_scale_factor > 0 or any(f > 0 for f in [low_freq, mid_freq, high_freq])):
         fractal = apply_frequency_colors_to_fractal(fractal, low_freq, mid_freq, high_freq, color_settings)
     
-    alpha = min(0.85, 0.6 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.2 if bmp_settings['enabled'] else 0))
+    # Alpha blending reattivo ai BPM - AUMENTATA LA SENSIBILITA'
+    alpha = min(0.85, 0.6 + (beat_intensity * bmp_settings['beat_response_intensity'] * 0.4 if bmp_settings['enabled'] else 0)) # AUMENTATO DA 0.3
     cv2.addWeighted(frame_img, 1-alpha, fractal, alpha, 0, frame_img)
     
     return frame_img
@@ -595,7 +597,7 @@ fractal_type = st.sidebar.selectbox(
 st.sidebar.header("🎬 Movimento")
 movement_scale = st.sidebar.slider(
     "Intensità movimento", 
-    min_value=0.0, # Modificato: Minimo a 0.0 per staticità completa
+    min_value=0.0, 
     max_value=3.0, 
     value=1.0, 
     step=0.1
@@ -611,7 +613,7 @@ bmp_settings = {
     ),
     'beat_response_intensity': st.sidebar.slider(
         "Intensità risposta beat", 
-        min_value=0.0, # Modificato: Minimo a 0.0 per nessuna risposta beat
+        min_value=0.0, 
         max_value=2.0, 
         value=0.8, 
         step=0.1
