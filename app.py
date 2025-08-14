@@ -284,8 +284,8 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         if random.random() < 0.5:
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], current_element_color)
             
-    
-elif pattern_mode == 5:  # Effetto "Linee Scomposte" (ottimizzato)
+    # INIZIO BLOCCO CORRETTO
+    elif pattern_mode == 5:  # Effetto "Linee Scomposte" (ottimizzato)
         # Spessore dinamico ma con cap
         current_line_thickness_glitch = int(border_thickness_base + border_thickness_mod + glitch_settings['line_thickness'])
         current_line_thickness_glitch = max(1, min(8, current_line_thickness_glitch))
@@ -357,8 +357,8 @@ elif pattern_mode == 5:  # Effetto "Linee Scomposte" (ottimizzato)
                         else:
                             off = int(rng.uniform(-2, 2) * break_intensity * 5)
                             cv2.line(frame_img, (x1_cell, line_y + off), (x2_cell, line_y + off), use_color, current_line_thickness_glitch)
-elif pattern_mode == 6:
- # Effetto "Particelle Reattive"
+    elif pattern_mode == 6:
+        # Effetto "Particelle Reattive"
         num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
         
         # Le particelle possono essere influenzate dal tempo per il loro movimento di base
@@ -551,7 +551,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
 
     # 4. Effetto Pixel Corrotti (Pixelizzazione)
     if post_fx_settings['pixel_corruption_enabled'] and random.random() < (0.05 + effective_rms * 0.1 + (beat_intensity * 0.1 if bpm_settings['enabled'] else 0)):
-        corruption_intensity = post_fx_settings['pixel_corruption_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+        corruption_intensity = post_fx_settings['pixel_corruption_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bmp_settings['enabled'] else 0))
         pixel_size = max(1, int(post_fx_settings['pixel_corruption_size'] * (1 + effective_rms * 0.5)))
         
         if pixel_size > 1 and corruption_intensity > 0.1:
@@ -582,7 +582,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
 
     # 5. Effetto Aberrazione Cromatica
     if post_fx_settings['chromatic_aberration_enabled']:
-        aberration_intensity = post_fx_settings['chromatic_aberration_intensity'] * (1 + effective_rms * 1.5 + (beat_intensity * 2 if bpm_settings['enabled'] else 0))
+        aberration_intensity = post_fx_settings['chromatic_aberration_intensity'] * (1 + effective_rms * 1.5 + (beat_intensity * 2 if bmp_settings['enabled'] else 0))
         
         if aberration_intensity > 0.1:
             b, g, r = cv2.split(frame_img)
