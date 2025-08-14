@@ -325,19 +325,21 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                             # Segmentazione
                             n_segments = max(2, int(2 + break_intensity * 4))
                             seg_h = max(1, current_cell_size // n_segments)
-                            # Precompute offsets
                             offsets = (rng.uniform(-4, 4, n_segments) * break_intensity * 6).astype(np.int32)
                             shrinks = rng.uniform(0.6, 1.0, n_segments) if rng.random() < break_intensity else np.ones(n_segments)
                             for s in range(n_segments):
                                 y0 = y1_cell + s * seg_h
                                 y1 = min(y0 + seg_h, y2_cell)
-                                # shrink in verticale
                                 dy = int((1.0 - float(shrinks[s])) * seg_h * 0.5)
-                                y0 += dy; y1 -= dy
-                                cv2.line(frame_img, (line_x + int(offsets[s]), y0), (line_x + int(offsets[s]), y1), use_color, max(1, current_line_thickness_glitch // 2))
+                                y0_final = int(np.clip(y0 + dy, 0, height))
+                                y1_final = int(np.clip(y1 - dy, 0, height))
+                                x_offset = int(np.clip(line_x + int(offsets[s]), 0, width))
+                                
+                                cv2.line(frame_img, (x_offset, y0_final), (x_offset, y1_final), use_color, max(1, current_line_thickness_glitch // 2))
                         else:
                             off = int(rng.uniform(-2, 2) * break_intensity * 5)
-                            cv2.line(frame_img, (line_x + off, y1_cell), (line_x + off, y2_cell), use_color, current_line_thickness_glitch)
+                            x_offset = int(np.clip(line_x + off, 0, width))
+                            cv2.line(frame_img, (x_offset, y1_cell), (x_offset, y2_cell), use_color, current_line_thickness_glitch)
 
                 if current_orientation_choice in ('Orizzontale', 'Entrambi'):
                     step = max(1, current_cell_size // n_lines)
@@ -353,13 +355,15 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                                 x1p_float = min(x0_float + seg_w, x2_cell)
                                 dx = int((1.0 - float(shrinks[s])) * seg_w * 0.5)
                                 
-                                x0_final = int(x0_float + dx)
-                                x1p_final = int(x1p_float - dx)
+                                x0_final = int(np.clip(x0_float + dx, 0, width))
+                                x1p_final = int(np.clip(x1p_float - dx, 0, width))
+                                y_offset = int(np.clip(line_y + int(offsets[s]), 0, height))
                                 
-                                cv2.line(frame_img, (x0_final, line_y + int(offsets[s])), (x1p_final, line_y + int(offsets[s])), use_color, max(1, current_line_thickness_glitch // 2))
+                                cv2.line(frame_img, (x0_final, y_offset), (x1p_final, y_offset), use_color, max(1, current_line_thickness_glitch // 2))
                         else:
                             off = int(rng.uniform(-2, 2) * break_intensity * 5)
-                            cv2.line(frame_img, (x1_cell, line_y + off), (x2_cell, line_y + off), use_color, current_line_thickness_glitch)
+                            y_offset = int(np.clip(line_y + off, 0, height))
+                            cv2.line(frame_img, (x1_cell, y_offset), (x2_cell, y_offset), use_color, current_line_thickness_glitch)
     elif pattern_mode == 6:
         # Effetto "Particelle Reattive"
         num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
@@ -474,8 +478,8 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
     frame_copy = frame_img.copy() # Lavoriamo su una copia per non modificare l'originale durante le manipolazioni.
 
     # 1. Effetto Glitch
-    if post_fx_settings['glitch_enabled'] and random.random() < post_fx_settings['glitch_frequency'] * (0.01 + effective_rms * 0.1 + (beat_intensity * 0.1 if bpm_settings['enabled'] else 0)):
-        glitch_intensity = post_fx_settings['glitch_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+    if post_fx_settings['glitch_enabled'] and random.random() < post_fx_settings['glitch_frequency'] * (0.01 + effective_rms * 0.1 + (beat_intensity * 0.1 if bmp_settings['enabled'] else 0)):
+        glitch_intensity = post_fx_settings['glitch_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bmp_settings['enabled'] else 0))
         block_size = max(10, int(post_fx_settings['glitch_block_size'] * (1 + effective_rms * 0.5)))
         color_shift = post_fx_settings['glitch_color_shift'] * (1 + effective_rms * 1.5)
         
@@ -553,7 +557,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
         frame_img = cv2.cvtColor(hsv_frame, cv2.COLOR_HSV2BGR)
 
     # 4. Effetto Pixel Corrotti (Pixelizzazione)
-    if post_fx_settings['pixel_corruption_enabled'] and random.random() < (0.05 + effective_rms * 0.1 + (beat_intensity * 0.1 if bpm_settings['enabled'] else 0)):
+    if post_fx_settings['pixel_corruption_enabled'] and random.random() < (0.05 + effective_rms * 0.1 + (beat_intensity * 0.1 if bmp_settings['enabled'] else 0)):
         corruption_intensity = post_fx_settings['pixel_corruption_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bmp_settings['enabled'] else 0))
         pixel_size = max(1, int(post_fx_settings['pixel_corruption_size'] * (1 + effective_rms * 0.5)))
         
@@ -607,7 +611,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
             
             # Applicare la trasformazione a ogni canale
             b_shifted = cv2.warpAffine(b, M_b, (width, height), borderMode=cv2.BORDER_REFLECT_101) # Usare reflect per i bordi
-            g_shifted = cv2.warpAffine(g, M_g, (width, height), borderMode=cv2.BORDER_REFLECT_101)
+            g_shifted = cv2.warpAffine(g, M_b, (width, height), borderMode=cv2.BORDER_REFLECT_101)
             r_shifted = cv2.warpAffine(r, M_r, (width, height), borderMode=cv2.BORDER_REFLECT_101)
             
             frame_img = cv2.merge([b_shifted, g_shifted, r_shifted])
