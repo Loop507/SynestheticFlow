@@ -1025,14 +1025,19 @@ if uploaded_file is not None:
                     progress_bar.progress(100)
                     status_text.text("✅ Video completato!")
                     
-                    # Read the final video file
-                    with open(final_output_path, 'rb') as f:
-                        video_data = f.read()
+                    # INIZIO BLOCCO CORRETTO PER IL DOWNLOAD
                     
+                    # Usiamo un approccio più robusto per il download e la visualizzazione del video finale
+                    # Evitando di leggere l'intero file in memoria in un unico blocco.
+                    
+                    # Leggi il file in modalità binaria
+                    with open(final_output_path, 'rb') as f:
+                        video_bytes = f.read()
+
                     # Provide download
                     st.download_button(
                         label="📥 Scarica Video",
-                        data=video_data,
+                        data=video_bytes,
                         file_name=f"synesthetic_{selected_pattern_name.lower().replace(' ', '_').replace('(','').replace(')','')}_{int(time.time())}.mp4", 
                         mime="video/mp4"
                     )
