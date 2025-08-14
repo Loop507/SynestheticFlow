@@ -86,49 +86,60 @@ def hex_to_bgr(hex_color):
 # --- FUNZIONI DI SUPPORTO PER SINCRONIZZAZIONE BPM ---
 
 def calculate_bpm_phase(current_time, tempo, sync_type, beat_times, bmp_settings):
-    """Calcola la fase corrente basata sul BPM per sincronizzazione precisa"""
-    if not bmp_settings['enabled'] or len(beat_times) == 0 or tempo <= 0:
+    """Calcola la fase corrente basata sul BPM per sincronizzazione precisa.
+    Versione *safe* che evita di restituire array NumPy e usa sempre scalari Python.
+    """
+    try:
+        if not bmp_settings.get('enabled', False) or tempo is None or tempo <= 0:
+            return 0.0, False, 1.0
+
+        # Converte beat_times in array 1D float in modo sicuro
+        bt = np.asarray(beat_times, dtype=np.float64).ravel()
+        if bt.size == 0 or not np.isfinite(current_time):
+            return 0.0, False, 1.0
+
+        # Distanza dal beat più vicino
+        beat_distances = np.abs(bt - float(current_time))
+        nearest_beat_idx = int(np.argmin(beat_distances))
+        nearest_beat_time = float(bt[nearest_beat_idx])
+
+        # Delta dal beat più vicino
+        time_from_beat = float(current_time) - nearest_beat_time
+
+        # Finestra per considerare "on beat" (1/8 del beat)
+        beat_window = float(60.0 / float(tempo) / 8.0)
+        is_on_beat = bool(abs(time_from_beat) <= beat_window)
+
+        # Fase
+        beat_duration = float(60.0 / float(tempo))
+
+        sync_multipliers = {
+            "Beat principale (1/1)": 1.0,
+            "Mezzo beat (1/2)": 2.0,
+            "Doppio beat (2/1)": 0.5,
+            "Terzine (1/3)": 3.0,
+        }
+        multiplier = float(sync_multipliers.get(sync_type, 1.0))
+        phase_duration = beat_duration / multiplier if multiplier != 0 else 0.0
+
+        if phase_duration > 0:
+            time_in_cycle = float(current_time) % phase_duration
+            phase = (time_in_cycle / phase_duration) * (2.0 * np.pi)
+        else:
+            phase = 0.0
+
+        # Intensità del beat (triangolare attenuata)
+        if beat_window > 0:
+            beat_intensity = 1.0 - min(1.0, abs(time_from_beat) / beat_window)
+            beat_intensity = 0.1 + 0.9 * beat_intensity if is_on_beat else 0.1
+        else:
+            beat_intensity = 0.1
+
+        # Ritorna *sempre* float Python
+        return float(phase), bool(is_on_beat), float(beat_intensity)
+    except Exception:
+        # In caso di anomalie, non bloccare l'app
         return 0.0, False, 1.0
-    
-    # Trova il beat più vicino
-    beat_distances = np.abs(beat_times - current_time)
-    nearest_beat_idx = np.argmin(beat_distances)
-    nearest_beat_time = beat_times[nearest_beat_idx]
-    
-    # Calcola la distanza temporale dal beat più vicino
-    time_from_beat = current_time - nearest_beat_time
-    
-    # Determina se siamo "su un beat"
-    beat_window = 60.0 / (tempo * 8)
-    is_on_beat = abs(time_from_beat) <= beat_window
-    
-    # Calcola la fase in base al tipo di sincronizzazione
-    beat_duration = 60.0 / tempo
-    
-    sync_multipliers = {
-        "Beat principale (1/1)": 1.0,
-        "Mezzo beat (1/2)": 2.0,
-        "Doppio beat (2/1)": 0.5,
-        "Terzine (1/3)": 3.0
-    }
-    
-    multiplier = sync_multipliers.get(sync_type, 1.0)
-    phase_duration = beat_duration / multiplier
-    
-    # Calcola la fase (0 a 2π nel periodo del beat)
-    if phase_duration > 0:
-        time_in_cycle = (current_time % phase_duration)
-        phase = (time_in_cycle / phase_duration) * 2 * np.pi
-    else:
-        phase = 0.0
-    
-    # Calcola l'intensità del beat
-    if beat_window > 0:
-        beat_intensity = max(0.1, 1.0 - (abs(time_from_beat) / beat_window)) if is_on_beat else 0.1
-    else:
-        beat_intensity = 0.1
-    
-    return float(phase), is_on_beat, float(beat_intensity)
 
 def apply_bpm_movement_modulation(base_value, phase, beat_intensity, modulation_type, bmp_settings):
     """Applica modulazione basata sui BPM a un valore base"""
@@ -273,97 +284,81 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                         if random.random() < 0.5:
                              cv2.fillPoly(frame_img, [pts.reshape((-1, 1, 2))], current_element_color)
             
-    elif pattern_mode == 5: # Effetto "Linee Scomposte"
+    
+elif pattern_mode == 5:  # Effetto "Linee Scomposte" (ottimizzato)
+        # Spessore dinamico ma con cap
         current_line_thickness_glitch = int(border_thickness_base + border_thickness_mod + glitch_settings['line_thickness'])
-        current_line_thickness_glitch = max(1, min(15, current_line_thickness_glitch)) 
+        current_line_thickness_glitch = max(1, min(8, current_line_thickness_glitch))
 
         line_orientation = glitch_settings['orientation']
 
+        # Prealloc RNG per ridurre overhead Python nei loop innestati
+        rng = np.random.default_rng(seed=None)
+
+        # Riduci densità linee in base alla cella per alleggerire
         for y_cell in range(0, height, current_cell_size):
             for x_cell in range(0, width, current_cell_size):
                 x1_cell, y1_cell = x_cell, y_cell
                 x2_cell, y2_cell = x_cell + current_cell_size, y_cell + current_cell_size
-                
-                # Sfondo della cella: sempre il colore di sfondo scelto
+
+                # Sfondo della cella
                 bg_for_lines = hex_to_bgr(color_settings['background_color'])
                 cv2.rectangle(frame_img, (x1_cell, y1_cell), (x2_cell, y2_cell), bg_for_lines, -1)
 
-                # Intensità di "rottura" basata sulle alte frequenze e RMS
-                break_intensity = np.clip(effective_high_freq * 4.0 + effective_rms * 2.0, 0.0, 1.0)
-                
-                # Scegli l'orientamento per questa cella se è "Entrambi"
+                # Intensità rottura più sobria per stabilità
+                break_intensity = float(np.clip(effective_high_freq * 2.5 + effective_rms * 1.6, 0.0, 1.0))
+
+                # Scelta orientamento per cella se "Entrambi"
                 current_orientation_choice = line_orientation
                 if line_orientation == 'Entrambi':
-                    current_orientation_choice = random.choice(['Verticale', 'Orizzontale'])
+                    current_orientation_choice = 'Verticale' if rng.random() < 0.5 else 'Orizzontale'
 
-                if current_orientation_choice == 'Verticale' or current_orientation_choice == 'Entrambi':
-                    # Numero di linee verticali all'interno della cella
-                    num_lines_vertical = max(2, int(current_cell_size / 15)) 
-                    
-                    for i in range(num_lines_vertical):
-                        line_x = x1_cell + int(i * (current_cell_size / num_lines_vertical))
-                        
-                        line_color_for_lines = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ( (0, 0, 0) if np.mean(bg_for_lines) >= 50 else (255, 255, 255) )
-                        
-                        # Se l'intensità di rottura è alta, spezziamo la linea
-                        if random.random() < break_intensity * 0.7: # Probabilità di rottura
-                            num_segments = max(2, int(break_intensity * 5)) # Più forte = più segmenti
-                            segment_height = current_cell_size / num_segments
-                            
-                            for s in range(num_segments):
-                                y_start_segment = y1_cell + int(s * segment_height)
-                                y_end_segment = y1_cell + int((s + 1) * segment_height)
-                                
-                                # Aggiungi un offset casuale orizzontale per l'effetto "glitch"
-                                glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
-                                
-                                # Riduci la lunghezza del segmento casualmente per "spazi"
-                                segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
-                                y_start_segment += int((1 - segment_shrink) * segment_height / 2)
-                                y_end_segment -= int((1 - segment_shrink) * segment_height / 2)
+                # Numero di linee per cella (cap a 10)
+                base_n = max(2, current_cell_size // 18)
+                n_lines = int(min(10, base_n))
 
-                                cv2.line(frame_img, (line_x + glitch_offset, y_start_segment), 
-                                         (line_x + glitch_offset, y_end_segment), 
-                                         line_color_for_lines, max(1, current_line_thickness_glitch // 2))
+                if current_orientation_choice in ('Verticale', 'Entrambi'):
+                    step = max(1, current_cell_size // n_lines)
+                    for line_x in range(x1_cell, x2_cell, step):
+                        use_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ((0,0,0) if np.mean(bg_for_lines) >= 50 else (255,255,255))
+                        if rng.random() < break_intensity * 0.7:
+                            # Segmentazione
+                            n_segments = max(2, int(2 + break_intensity * 4))
+                            seg_h = max(1, current_cell_size // n_segments)
+                            # Precompute offsets
+                            offsets = (rng.uniform(-4, 4, n_segments) * break_intensity * 6).astype(np.int32)
+                            shrinks = rng.uniform(0.6, 1.0, n_segments) if rng.random() < break_intensity else np.ones(n_segments)
+                            for s in range(n_segments):
+                                y0 = y1_cell + s * seg_h
+                                y1 = min(y0 + seg_h, y2_cell)
+                                # shrink in verticale
+                                dy = int((1.0 - float(shrinks[s])) * seg_h * 0.5)
+                                y0 += dy; y1 -= dy
+                                cv2.line(frame_img, (line_x + int(offsets[s]), y0), (line_x + int(offsets[s]), y1), use_color, max(1, current_line_thickness_glitch // 2))
                         else:
-                            # Linea intera (o leggermente spostata)
-                            glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
-                            cv2.line(frame_img, (line_x + glitch_offset, y1_cell), (line_x + glitch_offset, y2_cell), 
-                                     line_color_for_lines, current_line_thickness_glitch)
-                
-                if current_orientation_choice == 'Orizzontale' or current_orientation_choice == 'Entrambi':
-                    # Numero di linee orizzontali all'interno della cella
-                    num_lines_horizontal = max(2, int(current_cell_size / 15))
+                            off = int(rng.uniform(-2, 2) * break_intensity * 5)
+                            cv2.line(frame_img, (line_x + off, y1_cell), (line_x + off, y2_cell), use_color, current_line_thickness_glitch)
 
-                    for i in range(num_lines_horizontal):
-                        line_y = y1_cell + int(i * (current_cell_size / num_lines_horizontal))
-
-                        line_color_for_lines = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ( (0, 0, 0) if np.mean(bg_for_lines) >= 50 else (255, 255, 255) )
-
-                        if random.random() < break_intensity * 0.7:
-                            num_segments = max(2, int(break_intensity * 5))
-                            segment_width = current_cell_size / num_segments
-
-                            for s in range(num_segments):
-                                x_start_segment = x1_cell + int(s * segment_width)
-                                x_end_segment = x1_cell + int((s + 1) * segment_width)
-
-                                glitch_offset = int(random.uniform(-5, 5) * break_intensity * 10)
-
-                                segment_shrink = random.uniform(0.1, 0.8) if random.random() < break_intensity else 1.0
-                                x_start_segment += int((1 - segment_shrink) * segment_width / 2)
-                                x_end_segment -= int((1 - segment_shrink) * segment_width / 2)
-                                
-                                cv2.line(frame_img, (x_start_segment, line_y + glitch_offset),
-                                         (x_end_segment, line_y + glitch_offset),
-                                         line_color_for_lines, max(1, current_line_thickness_glitch // 2))
+                if current_orientation_choice in ('Orizzontale', 'Entrambi'):
+                    step = max(1, current_cell_size // n_lines)
+                    for line_y in range(y1_cell, y2_cell, step):
+                        use_color = get_dynamic_element_color() if color_settings['use_frequency_colors'] else ((0,0,0) if np.mean(bg_for_lines) >= 50 else (255,255,255))
+                        if rng.random() < break_intensity * 0.7:
+                            n_segments = max(2, int(2 + break_intensity * 4))
+                            seg_w = max(1, current_cell_size // n_segments)
+                            offsets = (rng.uniform(-4, 4, n_segments) * break_intensity * 6).astype(np.int32)
+                            shrinks = rng.uniform(0.6, 1.0, n_segments) if rng.random() < break_intensity else np.ones(n_segments)
+                            for s in range(n_segments):
+                                x0 = x1_cell + s * seg_w
+                                x1p = min(x0 + seg_w, x2_cell)
+                                dx = int((1.0 - float(shrinks[s])) * seg_w * 0.5)
+                                x0 += dx; x1p -= dx
+                                cv2.line(frame_img, (x0, line_y + int(offsets[s])), (x1p, line_y + int(offsets[s])), use_color, max(1, current_line_thickness_glitch // 2))
                         else:
-                            glitch_offset = int(random.uniform(-2, 2) * break_intensity * 5)
-                            cv2.line(frame_img, (x1_cell, line_y + glitch_offset), (x2_cell, line_y + glitch_offset),
-                                     line_color_for_lines, current_line_thickness_glitch)
-
-
-    elif pattern_mode == 6: # Effetto "Particelle Reattive"
+                            off = int(rng.uniform(-2, 2) * break_intensity * 5)
+                            cv2.line(frame_img, (x1_cell, line_y + off), (x2_cell, line_y + off), use_color, current_line_thickness_glitch)
+elif pattern_mode == 6:
+ # Effetto "Particelle Reattive"
         num_particles_to_draw = particles_settings['quantity'] # Usa il valore dallo slider
         
         # Le particelle possono essere influenzate dal tempo per il loro movimento di base
