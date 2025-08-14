@@ -349,11 +349,14 @@ def draw_geometric_pattern_bpm_sync(frame_img, width, height, rms, current_time,
                             offsets = (rng.uniform(-4, 4, n_segments) * break_intensity * 6).astype(np.int32)
                             shrinks = rng.uniform(0.6, 1.0, n_segments) if rng.random() < break_intensity else np.ones(n_segments)
                             for s in range(n_segments):
-                                x0 = x1_cell + s * seg_w
-                                x1p = min(x0 + seg_w, x2_cell)
+                                x0_float = x1_cell + s * seg_w
+                                x1p_float = min(x0_float + seg_w, x2_cell)
                                 dx = int((1.0 - float(shrinks[s])) * seg_w * 0.5)
-                                x0 += dx; x1p -= dx
-                                cv2.line(frame_img, (x0, line_y + int(offsets[s])), (x1p, line_y + int(offsets[s])), use_color, max(1, current_line_thickness_glitch // 2))
+                                
+                                x0_final = int(x0_float + dx)
+                                x1p_final = int(x1p_float - dx)
+                                
+                                cv2.line(frame_img, (x0_final, line_y + int(offsets[s])), (x1p_final, line_y + int(offsets[s])), use_color, max(1, current_line_thickness_glitch // 2))
                         else:
                             off = int(rng.uniform(-2, 2) * break_intensity * 5)
                             cv2.line(frame_img, (x1_cell, line_y + off), (x2_cell, line_y + off), use_color, current_line_thickness_glitch)
@@ -509,7 +512,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
     
     # 2. Effetto Distorsione Lente/Onda
     if post_fx_settings['distortion_enabled']:
-        distortion_intensity = post_fx_settings['distortion_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bpm_settings['enabled'] else 0))
+        distortion_intensity = post_fx_settings['distortion_intensity'] * (1 + effective_rms * 2 + (beat_intensity * 3 if bmp_settings['enabled'] else 0))
         wave_frequency = post_fx_settings['distortion_wave_frequency'] * (1 + effective_rms)
 
         map_x = np.zeros((height, width), np.float32)
@@ -539,7 +542,7 @@ def apply_post_processing_effects(frame_img, width, height, rms, current_time, b
 
     # 3. Effetto Saturazione
     if post_fx_settings['saturation_enabled']:
-        saturation_scale = post_fx_settings['saturation_scale'] * (1 + effective_rms * 0.5 + (beat_intensity * 0.5 if bpm_settings['enabled'] else 0))
+        saturation_scale = post_fx_settings['saturation_scale'] * (1 + effective_rms * 0.5 + (beat_intensity * 0.5 if bmp_settings['enabled'] else 0))
         
         hsv_frame = cv2.cvtColor(frame_img, cv2.COLOR_BGR2HSV)
         h, s, v = cv2.split(hsv_frame)
